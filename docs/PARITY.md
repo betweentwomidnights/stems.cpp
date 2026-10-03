@@ -119,9 +119,10 @@ The fork now honours `GGML_PREC_F32` on contiguous F32 x F32 matmuls. It runs th
 fp32 build of the scalar shader, and every matmul in `htdemucs.cpp` already asks for that
 precision. On this card it costs no measurable time for HTDemucs.
 
-The pin, `07f9348a` (betweentwomidnights/ggml#10), is the commit shared by every consumer of
-the fork. Besides #7 it carries two Vulkan fixes HTDemucs does not depend on: #8 (the batch
-stride of a matmul over a strided view) and #9 (`PAD_REFLECT_1D`). #7 must not ship without
-#8. Before #7, coopmat2 copied every F32 input to a staging buffer, and that copy hid #8's
-bug; `GGML_PREC_F32` now skips the copy. The table above was re-measured at `07f9348a`, and
-it is identical to `217f0f2d` alone.
+The pin, `f30f0cdc` (betweentwomidnights/ggml#11), is the commit shared by every consumer of the
+fork. It is `07f9348a` (#10: #7 plus two Vulkan fixes HTDemucs does not depend on, #8 for the batch
+stride of a matmul over a strided view and #9 for `PAD_REFLECT_1D`) with the Metal counterpart of #7
+on top. #7 must not ship without #8. Before #7, coopmat2 copied every F32 input to a staging
+buffer, and that copy hid #8's bug; `GGML_PREC_F32` now skips the copy. The table above was
+re-measured at `07f9348a` and is identical to `217f0f2d` alone. #11 changes only Metal sources, so
+it is unchanged at `f30f0cdc`.
