@@ -149,3 +149,38 @@ matrices (`GGML_VK_DISABLE_COOPMAT=1` made it worse). The RoFormers stay at 33�
 HTDemucs does not hold up. On the same clip and GPU, `htdemucs` bass and vocals fall to
 33–36 dB, and `htdemucs_6s` to 10–18 dB on vocals, guitar, piano and bass (cos 0.958 for
 vocals). Under investigation; until then, use CUDA or CPU when the stems must be exact.
+
+## Metal (Apple M4)
+
+Measured 2026-10-02 on an Apple M4 Mac (32 GB), ggml `07f9348a`, same
+refs and test clip, `stems-parity --device gpu`. CPU on the same machine matches the tables
+above (Kim full 74.4 dB, `htdemucs` 78.5–122.7 dB), so every gap below is Metal's.
+
+| model | check | drums | bass | other | vocals | guitar | piano | 20 s clip |
+|---|---|---|---|---|---|---|---|---|
+| htdemucs | full | 70.1 | 42.9 | 75.2 | 51.0 | | | 12.2 s |
+| htdemucs_6s | seg | 65.8 | **35.8 (FAIL)** | 73.6 | 53.5 | 48.9 | 49.2 | |
+| htdemucs_6s | full | 71.1 | 40.4 | 74.2 | 53.1 | 49.3 | 48.8 | 14.9 s |
+| htdemucs_ft | full | 72.8 | 37.5 | 77.4 | 51.5 | | | 48.9 s |
+
+| model | seg cos / SNR | full cos / SNR | 20 s clip |
+|---|---|---|---|
+| mel_band_roformer_kim | 0.9999923 / 47.9 | 0.9999994 / 59.1 | 27.5 s |
+| bs_roformer_viperx_317 | 0.9999808 / 44.1 | 0.9999575 / 29.0 | 66.6 s |
+
+Metal's `kernel_mul_mm_f32_f32` stages both operands as `half` and ignores `GGML_PREC_F32`:
+the same fp16 rounding betweentwomidnights/ggml#7 removed from Vulkan, and the viperx numbers
+look like pre-#7 Vulkan. It needs the same fix in ggml's Metal backend. Until then, use CPU on
+a Mac when the stems must be exact. The M4 GPU is about 1.7x faster than its CPU on HTDemucs
+and about 8.5x on Kim (CPU: 21 s and 235 s).
+
+Before 2026-10-02 HTDemucs did not run on Metal at all, at any ggml pin:
+
+- **Left padding.** Metal's `PAD` only pads on the right, and the transposed conv's
+  overlap-add padded its second half on the left: `unsupported op 'PAD'`. It now pads on the
+  right and rolls.
+- **`group_norm` over ne3.** Metal's `group_norm` ignores ne3, so the frequency branch's
+  per-row norms (one group over `[W, C, 1, H]`) were wrong from `enc0` on and reached NaN by
+  `enc3`. They now run as H groups over `[W, C, H]`, the same norm.
+
+Both are pure re-expressions: CPU stems are byte-identical to before (htdemucs, htdemucs_6s).
