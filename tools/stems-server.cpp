@@ -17,7 +17,7 @@
 // The model stays resident between requests: HTDemucs is 168 MB of weights, and loading it
 // is most of the latency on a short loop. Asking for a different model swaps it.
 #include "audio.h"
-#include "htdemucs.h"
+#include "separator.h"
 #include "serve/http.h"
 
 #include "httplib.h"
@@ -43,7 +43,7 @@ using namespace st::serve;
 std::string g_models_dir;
 std::string g_device;
 Sessions g_sessions;
-std::unique_ptr<st::HTDemucs> g_model;     // guarded by g_sessions.gpu()
+std::unique_ptr<st::Separator> g_model;     // guarded by g_sessions.gpu()
 std::string g_model_path;
 
 std::string env_or(const char* key, const std::string& fallback) {
@@ -161,10 +161,10 @@ std::string run_separate(SeparateRequest req, const std::string& session) {
     if (path.empty()) throw std::runtime_error("no GGUF for model '" + req.model + "' in " + g_models_dir);
     if (!g_model || g_model_path != path) {
         g_model.reset();
-        g_model = std::make_unique<st::HTDemucs>(path, g_device.empty() ? nullptr : g_device.c_str());
+        g_model = st::load_separator(path, g_device.empty() ? nullptr : g_device.c_str());
         g_model_path = path;
     }
-    st::HTDemucs& m = *g_model;
+    const st::Separator& m = *g_model;
     const auto& src = m.sources();
     int two = -1;
     if (!req.two_stems.empty()) {

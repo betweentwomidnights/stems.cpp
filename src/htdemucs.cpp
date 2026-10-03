@@ -503,6 +503,10 @@ HTDemucs::~HTDemucs() {
 }
 
 const std::string& HTDemucs::name() const { return p_->name; }
+const std::string& HTDemucs::architecture() const {
+    static const std::string arch = "htdemucs";
+    return arch;
+}
 const std::vector<std::string>& HTDemucs::sources() const { return p_->sources; }
 int HTDemucs::samplerate() const { return p_->sr; }
 int HTDemucs::audio_channels() const { return p_->channels; }

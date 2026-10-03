@@ -7,52 +7,34 @@
 // `demucs --shifts 0` sample for sample (see docs/PARITY.md).
 #pragma once
 
-#include <cstdint>
-#include <functional>
+#include "separator.h"
+
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace st {
 
-struct SeparateOptions {
-    // Random time shifts averaged for time equivariance (demucs --shifts). Each shift is a
-    // full extra pass. 0 = one deterministic pass (the default here; demucs' CLI uses 1).
-    int shifts = 0;
-    // Overlap between consecutive segments (demucs --overlap).
-    float overlap = 0.25f;
-    // Seed for the shift offsets.
-    uint32_t seed = 0;
-    // Called with (done, total) segment passes.
-    std::function<void(int, int)> progress;
-    // Polled before every segment pass; returning true abandons the job with Cancelled.
-    std::function<bool()> should_cancel;
-};
-
-struct Cancelled : std::runtime_error {
-    Cancelled() : std::runtime_error("cancelled") {}
-};
-
-class HTDemucs {
+class HTDemucs final : public Separator {
 public:
     // device: nullptr/"" = best GPU (STEMS_DEVICE / STEMS_GPU env vars apply), "cpu" = CPU.
     explicit HTDemucs(const std::string& gguf_path, const char* device = nullptr, int cpu_threads = 0);
-    ~HTDemucs();
+    ~HTDemucs() override;
     HTDemucs(const HTDemucs&) = delete;
     HTDemucs& operator=(const HTDemucs&) = delete;
 
-    const std::string& name() const;
-    const std::vector<std::string>& sources() const;
-    int samplerate() const;
-    int audio_channels() const;
-    int segment_samples() const;
-    int n_models() const;
-    const char* backend_name() const;
+    const std::string& name() const override;
+    const std::string& architecture() const override;
+    const std::vector<std::string>& sources() const override;
+    int samplerate() const override;
+    int audio_channels() const override;
+    int segment_samples() const override;
+    int n_models() const override;
+    const char* backend_name() const override;
 
     // Full separation. mix is planar [audio_channels][len] at samplerate(); returns planar
     // [S][audio_channels][len]. Normalises by the mono mix exactly as `demucs` does.
-    std::vector<float> separate(const float* mix, int len, const SeparateOptions& opt = {}) const;
+    std::vector<float> separate(const float* mix, int len, const SeparateOptions& opt = {}) const override;
 
     // One raw model forward on exactly segment_samples() of already-normalised audio:
     // planar [C][N] -> [S][C][N]. For the parity tests. If dump_dir is non-empty, the

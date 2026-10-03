@@ -8,7 +8,7 @@
 // no_X is the sum of the other sources -- the demucs definition, so it is the model's own
 // estimate of the rest, not the mix minus X.
 #include "audio.h"
-#include "htdemucs.h"
+#include "separator.h"
 #include "wav.h"
 
 #include <chrono>
@@ -67,7 +67,8 @@ int main(int argc, char** argv) {
     if (model.empty() || input.empty()) { usage(); return 2; }
 
     try {
-        st::HTDemucs m(model, device.empty() ? nullptr : device.c_str(), threads);
+        const auto sep = st::load_separator(model, device.empty() ? nullptr : device.c_str(), threads);
+        const st::Separator& m = *sep;
         const auto& src = m.sources();
         int n = 0, ch = 0, sr = 0;
         std::vector<float> audio = st::read_wav_planar(input, n, ch, sr);
