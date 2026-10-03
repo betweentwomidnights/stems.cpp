@@ -1,7 +1,8 @@
-// stft.h — torch.stft / torch.istft as HTDemucs calls them, on the host.
+// stft.h — torch.stft / torch.istft as the models call them, on the host.
 //
-// Only what HTDemucs needs: n_fft a power of two, Hann window (torch's periodic default),
-// center=True with reflect padding, normalized=True, onesided. Double precision inside; the
+// n_fft a power of two, Hann window (torch's periodic default), center=True with reflect
+// padding, onesided. htdemucs_spec/ispec add HTDemucs' own padding and cropping on top;
+// torch_stft/istft are the plain calls the RoFormers make. Double precision inside; the
 // spectrogram is tiny next to the network (336 frames per 7.8 s segment), so there is no
 // reason to put it on the GPU or to trade accuracy for speed here.
 #pragma once
@@ -133,6 +134,60 @@ inline std::vector<float> htdemucs_ispec(const FFT& fft, const std::vector<cplx>
     for (int i = 0; i < length; i++) {
         const size_t j = (size_t)nfft / 2 + pad + i;
         if ((int)(j - nfft / 2) >= le_out || j >= full) { out[i] = 0.0f; continue; }
+        out[i] = env[j] > 1e-11 ? (float)(y[j] / env[j]) : 0.0f;
+    }
+    return out;
+}
+
+// Plain torch.stft for one channel: hann_window(nfft) (periodic), win_length == n_fft,
+// center=True with reflect padding, onesided. Returns [F = nfft/2 + 1][T] complex, f-major
+// (spec[f * T + t]), with T = len / hop + 1.
+inline std::vector<cplx> torch_stft(const FFT& fft, const float* x, int len, int hop, bool normalized,
+                                    int& n_frames) {
+    const int nfft = fft.size(), F = nfft / 2 + 1;
+    const std::vector<double> xp = reflect_pad(x, len, nfft / 2, nfft / 2);
+    const std::vector<double> win = hann_periodic(nfft);
+    const double norm = normalized ? 1.0 / std::sqrt((double)nfft) : 1.0;
+    const int T = len / hop + 1;
+    n_frames = T;
+    std::vector<cplx> out((size_t)F * T);
+    std::vector<cplx> buf(nfft);
+    for (int t = 0; t < T; t++) {
+        const size_t start = (size_t)t * hop;
+        for (int i = 0; i < nfft; i++) buf[i] = cplx(xp[start + i] * win[i], 0.0);
+        fft.run(buf, false);
+        for (int f = 0; f < F; f++) out[(size_t)f * T + t] = buf[f] * norm;
+    }
+    return out;
+}
+
+// torch.istft matching torch_stft, length=None: hop * (T - 1) samples. spec is [F][T] f-major.
+inline std::vector<float> torch_istft(const FFT& fft, const std::vector<cplx>& spec, int n_frames,
+                                      int hop, bool normalized) {
+    const int nfft = fft.size(), F = nfft / 2 + 1;
+    const std::vector<double> win = hann_periodic(nfft);
+    const size_t full = (size_t)nfft + (size_t)hop * (n_frames - 1);
+    std::vector<double> y(full, 0.0), env(full, 0.0);
+    std::vector<cplx> buf(nfft);
+    const double norm = (normalized ? std::sqrt((double)nfft) : 1.0) / nfft;
+    for (int t = 0; t < n_frames; t++) {
+        buf[0] = cplx(spec[t].real(), 0.0);              // c2r ignores the DC and Nyquist imag
+        for (int f = 1; f < F - 1; f++) {
+            buf[f] = spec[(size_t)f * n_frames + t];
+            buf[nfft - f] = std::conj(buf[f]);
+        }
+        buf[F - 1] = cplx(spec[(size_t)(F - 1) * n_frames + t].real(), 0.0);
+        fft.run(buf, true);
+        const size_t off = (size_t)t * hop;
+        for (int i = 0; i < nfft; i++) {
+            y[off + i] += buf[i].real() * norm * win[i];
+            env[off + i] += win[i] * win[i];
+        }
+    }
+    const int length = hop * (n_frames - 1);
+    std::vector<float> out(length);
+    for (int i = 0; i < length; i++) {
+        const size_t j = (size_t)nfft / 2 + i;
         out[i] = env[j] > 1e-11 ? (float)(y[j] / env[j]) : 0.0f;
     }
     return out;

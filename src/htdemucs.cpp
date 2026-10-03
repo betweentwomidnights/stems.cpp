@@ -119,8 +119,9 @@ struct Builder {
             y = ggml_reshape_3d(ctx, y, W_, 1, C);
         } else {
             ggml_tensor* p = ggml_cont(ctx, ggml_permute(ctx, x, 0, 2, 1, 3));   // [W, C, H]
-            y = ggml_group_norm(ctx, ggml_reshape_4d(ctx, p, W_, C, 1, H), 1, kEps);
-            y = ggml_reshape_3d(ctx, y, W_, C, H);
+            // One group per row h: the same norm as 1 group over [W, C, 1, H], but Metal's
+            // group_norm ignores ne3, so the rows go on ne2.
+            y = ggml_group_norm(ctx, p, (int)H, kEps);
             y = ggml_cont(ctx, ggml_permute(ctx, y, 0, 2, 1, 3));                  // [W, H, C]
         }
         return ggml_add(ctx, ggml_mul(ctx, y, w), b);
@@ -178,12 +179,13 @@ struct Builder {
         };
         ggml_tensor* lo = half(0);
         ggml_tensor* hi = half(kStride);
+        // hi is padded on the left as pad-right-then-roll: Metal's PAD only pads on the right.
         if (ax == 1) {
-            lo = ggml_pad_ext(ctx, lo, 0, 0, 0, kStride, 0, 0, 0, 0);
-            hi = ggml_pad_ext(ctx, hi, 0, 0, kStride, 0, 0, 0, 0, 0);
+            lo = ggml_pad(ctx, lo, 0, kStride, 0, 0);
+            hi = ggml_roll(ctx, ggml_pad(ctx, hi, 0, kStride, 0, 0), 0, kStride, 0, 0);
         } else {
-            lo = ggml_pad_ext(ctx, lo, 0, kStride, 0, 0, 0, 0, 0, 0);
-            hi = ggml_pad_ext(ctx, hi, kStride, 0, 0, 0, 0, 0, 0, 0);
+            lo = ggml_pad(ctx, lo, kStride, 0, 0, 0);
+            hi = ggml_roll(ctx, ggml_pad(ctx, hi, kStride, 0, 0, 0), kStride, 0, 0, 0);
         }
         return ggml_add(ctx, ggml_add(ctx, lo, hi), bias);
     }
@@ -558,7 +560,8 @@ std::vector<float> HTDemucs::separate(const float* mix_in, int len, const Separa
             }
     };
 
-    const int stride = (int)((1.0 - (double)opt.overlap) * seg);
+    const double overlap = opt.overlap < 0.0f ? 0.25 : (double)opt.overlap;
+    const int stride = (int)((1.0 - overlap) * seg);
     if (stride <= 0) throw std::invalid_argument("overlap must be < 1");
     std::vector<float> weight(seg);
     {

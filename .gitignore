@@ -7,3 +7,4 @@ tests/data/*.wav
 .venv*/
 cuda-build.log
 tests/data/
+models/src/

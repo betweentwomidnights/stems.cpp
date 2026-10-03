@@ -1,4 +1,4 @@
-// stems-server -- HTDemucs source separation over HTTP, on :8010.
+// stems-server -- stem separation over HTTP, on :8010.
 //
 // Same shape as audiocraft.cpp's services (one job at a time, a session to poll, base64 WAV
 // in and out) so gary4juce can drive it with the client code it already has for terry:
@@ -10,12 +10,14 @@
 //   GET  /api/juce/poll_status/<id>       -> progress, then {stems: {name: b64 wav}}
 //
 // Request fields: audio_data (base64 WAV, any rate/channel count), and optionally
-// model ("htdemucs", "htdemucs_6s", "htdemucs_ft"; default htdemucs), two_stems (a source
-// name: returns it and no_<name>), stems (array of source names to return), shifts,
-// overlap, seed, float32 (return float WAVs instead of 16-bit).
+// model ("htdemucs", "htdemucs_6s", "htdemucs_ft", "mel_band_roformer_kim"; default
+// htdemucs), two_stems (a source name: returns it and no_<name>), stems (array of source
+// names to return), shifts, overlap (default: the model's own), seed, float32 (return float
+// WAVs instead of 16-bit).
 //
-// The model stays resident between requests: HTDemucs is 168 MB of weights, and loading it
-// is most of the latency on a short loop. Asking for a different model swaps it.
+// The model stays resident between requests: HTDemucs is 168 MB of weights and Kim's RoFormer
+// 913 MB, and loading is most of the latency on a short loop. Asking for a different model
+// swaps it.
 #include "audio.h"
 #include "separator.h"
 #include "serve/http.h"
@@ -147,11 +149,11 @@ SeparateRequest parse(const Json& body) {
     r.two_stems = body.str("two_stems");
     r.stems = body.strs("stems");
     r.opt.shifts = (int)body.num("shifts", 0);
-    r.opt.overlap = (float)body.num("overlap", 0.25);
+    r.opt.overlap = (float)body.num("overlap", -1.0);
     r.opt.seed = (uint32_t)resolve_seed((long long)body.num("seed", -1));
     r.float32 = body.flag("float32");
     if (r.opt.shifts < 0 || r.opt.shifts > 10) throw std::invalid_argument("shifts must be 0..10");
-    if (!(r.opt.overlap >= 0.0f && r.opt.overlap < 1.0f)) throw std::invalid_argument("overlap must be in [0, 1)");
+    if (!(r.opt.overlap < 1.0f)) throw std::invalid_argument("overlap must be < 1 (negative = model default)");
     return r;
 }
 
@@ -211,7 +213,7 @@ void usage() {
     fprintf(stderr,
         "usage: stems-server [--port 8010] [--host 127.0.0.1] [--models-dir DIR] [--device NAME]\n"
         "\n"
-        "HTDemucs stem separation over HTTP. Models are found in --models-dir (or\n"
+        "Stem separation over HTTP. Models are found in --models-dir (or\n"
         "STEMS_MODELS_DIR) as <name>-f16.gguf / <name>-f32.gguf.\n");
 }
 
@@ -242,7 +244,7 @@ int main(int argc, char** argv) {
     server.set_payload_max_length(1024ull * 1024 * 1024);   // a whole song as base64 WAV
 
     server.Get("/health", [](const httplib::Request&, httplib::Response& res) {
-        const bool ready = !find_model("htdemucs").empty();
+        const bool ready = !list_ggufs().empty();
         res.status = ready ? 200 : 503;
         res.set_content(JsonObject()
                             .str("status", ready ? "healthy" : "degraded")
@@ -265,7 +267,8 @@ int main(int argc, char** argv) {
         }
         body += "],\"known\":{\"htdemucs\":[\"drums\",\"bass\",\"other\",\"vocals\"],"
                 "\"htdemucs_ft\":[\"drums\",\"bass\",\"other\",\"vocals\"],"
-                "\"htdemucs_6s\":[\"drums\",\"bass\",\"other\",\"vocals\",\"guitar\",\"piano\"]}}";
+                "\"htdemucs_6s\":[\"drums\",\"bass\",\"other\",\"vocals\",\"guitar\",\"piano\"],"
+                "\"mel_band_roformer_kim\":[\"vocals\",\"instrumental\"]}}";
         res.set_content(body, "application/json");
     });
 

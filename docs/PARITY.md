@@ -126,3 +126,123 @@ on top. #7 must not ship without #8. Before #7, coopmat2 copied every F32 input 
 buffer, and that copy hid #8's bug; `GGML_PREC_F32` now skips the copy. The table above was
 re-measured at `07f9348a` and is identical to `217f0f2d` alone. #11 changes only Metal sources, so
 it is unchanged at `f30f0cdc`.
+
+## RoFormers
+
+Measured 2026-10-02 on Windows (Core Ultra 9 275HX, RTX 5070 Laptop GPU), same 20 s test clip.
+The reference is the model code each checkpoint was published with, run in float32 on CPU:
+Kim's own `MelBandRoformer` for `mel_band_roformer_kim`, ZFTurbo's MSST `BSRoformer` for viperx's
+`ep_317`. Chunking is `demix_track` (8 s chunks, `num_overlap: 2`, linear fades, reflect-padded
+borders) in both.
+
+- **seg** is one raw `model(x)` on the first chunk, exactly as `demix_track` feeds it.
+- **full** is `demix_track` over the whole clip.
+
+Both are single-stem vocal models, so there is one stem to compare. The `instrumental` the
+runtime adds is mix minus vocals, computed in float.
+
+| model | backend | seg cos / SNR | full cos / SNR | 20 s clip |
+|---|---|---|---|---|
+| mel_band_roformer_kim | CPU | 0.9999992 / 57.0 | 1.0000000 / 72.7 | 151 s |
+| mel_band_roformer_kim | CUDA | 0.9999992 / 57.0 | 1.0000000 / 72.7 | 9.8 s |
+| mel_band_roformer_kim | Vulkan | 0.9999992 / 57.0 | 1.0000000 / 72.7 | 6.6 s |
+| mel_band_roformer_kim, F16 weights | CUDA | 0.9999914 / 46.9 | 0.9999998 / 61.0 | 10.0 s |
+| mel_band_roformer_kim, F16 weights | Vulkan | 0.9999921 / 47.6 | 0.9999997 / 59.8 | 5.2 s |
+| bs_roformer_viperx_317 | CPU | 0.9999999 / 69.6 | 0.9999999 / 65.2 | 411 s |
+| bs_roformer_viperx_317 | CUDA | 0.9999999 / 69.5 | 0.9999999 / 62.4 | 22.4 s |
+| bs_roformer_viperx_317 | Vulkan | 0.9999999 / 69.6 | 0.9999999 / 63.1 | 14.2 s |
+
+Vulkan is RTX 5070 Laptop (coopmat2), ggml `07f9348a`. Before betweentwomidnights/ggml#7, Vulkan
+rounded the operands of every F32 x F32 matmul to fp16 whatever `GGML_PREC_F32` said, and these
+rows read 45.2 / 57.8 (Kim) and 44.2 / 33.6 dB (viperx). Getting fp32 back costs about 40% on
+this card: Kim went from 4.7 to 6.6 s and viperx from 9.2 to 14.2 s. A caller that would
+rather have the speed can drop `GGML_PREC_F32` on the matmuls.
+
+The seg SNRs look low next to the full ones because the first chunk is mostly the reflected
+intro, where the vocal stem is near silence: the largest absolute error there is 4e-8. F16
+weights halve Kim's GGUF and stay far below anything audible. MSST and UVR run these models
+under fp16 autocast on CUDA anyway.
+
+### Two things the reference code does that the config doesn't say
+
+- **Mask MLP depth.** `mask_estimator_depth: 2` builds three Linear layers in Kim's copy of the
+  code and two in MSST's (`MLP` changed its meaning of `depth`). The converter counts the
+  layers in the checkpoint and writes `roformer.mask_layers`, so the config's number is never trusted.
+- **`zero_dc`.** MSST's BS- and Mel-Band RoFormer zero the DC bin of the masked spectrogram
+  before the iSTFT (`zero_dc=True` by default); Kim's code does not. Without it viperx's first
+  chunk matched at only cos 0.984. The converter writes `roformer.zero_dc`: on for MSST
+  checkpoints, off for Kim's.
+
+### Reproduce
+
+```bash
+.venv-ref/bin/pip install torch numpy soundfile librosa pyyaml ml_collections gguf huggingface_hub \
+    einops==0.6.1 beartype==0.14.1 rotary_embedding_torch==0.3.5
+python tools/convert_roformer.py --preset kim models/mel_band_roformer_kim-f32.gguf
+python tools/dump_refs_roformer.py kim tests/data/test.wav tests/refs/mel_band_roformer_kim
+build/bin/stems-parity --model models/mel_band_roformer_kim-f32.gguf \
+    --refs tests/refs/mel_band_roformer_kim --wav tests/data/test.wav
+```
+
+For viperx, download `model_bs_roformer_ep_317_sdr_12.9755.ckpt` from UVR's model repo and its
+config from MSST's `configs/viperx/`, then `convert_roformer.py --arch bs_roformer --ckpt ...
+--config ... --name bs_roformer_viperx_317 --complement instrumental` and
+`dump_refs_roformer.py viperx_bs_317 ... --ckpt ...`.
+
+## Vulkan
+
+The Vulkan rows above are at ggml `07f9348a` and later. Before betweentwomidnights/ggml#7, ggml's
+Vulkan F32 matmuls rounded their operands to fp16 whatever precision was asked for. The RoFormers
+then sat at 33–58 dB, and HTDemucs failed (see "fp16 operands in ggml-vulkan's F32 matmuls" above).
+Both now match CPU. The cost on this card is about 40% on the RoFormers and nothing measurable on
+HTDemucs.
+
+## Metal (Apple M4)
+
+Measured 2026-10-02/03 on an Apple M4 Mac (32 GB), same refs and test clip, `stems-parity --device
+gpu`. The torch refs were dumped on the M4, and that machine's CPU build is the bar. It matches the
+tables above (Kim full 74.4 dB, `htdemucs` 78.5–122.7 dB). The exception is viperx: CPU gets 50.6 dB
+against ARM torch, versus 65.2 dB against the Windows/x86 refs.
+
+**At ggml `f30f0cdc`** (betweentwomidnights/ggml#11, every model passes):
+
+| model | worst stem, full | seg / full | 20 s clip |
+|---|---|---|---|
+| htdemucs | bass 70.7 | | 12.7 s |
+| htdemucs_6s | bass 74.3 | | 15.5 s |
+| htdemucs_ft | bass 67.1 | | |
+| mel_band_roformer_kim | | 61.5 / 74.4 (= M4 CPU) | about 28 s |
+| bs_roformer_viperx_317 | | 61.8 / 48.8 (M4 CPU 61.8 / 50.6) | about 76 s |
+
+#11 is the Metal counterpart of ggml#7. Before it, `kernel_mul_mm_f32_f32` staged both operands as
+`half` and ignored `GGML_PREC_F32`. #11 also cherry-picks an upstream fix for NORM/RMS_NORM rows
+that leave a partial simdgroup: the band-split RMS norms here are 132, 264, 396... wide, and were
+normalised with the wrong scale. Kim on Metal now matches the M4 CPU to the dB. viperx full sits
+1.8 dB under it, which is float32 accumulation over 12 layers; every op compares at float32 noise.
+It costs about 6–10% on the RoFormers and nothing on HTDemucs. The M4 GPU is about 1.7x its CPU on
+HTDemucs and about 8.5x on Kim.
+
+**At ggml `07f9348a`, before #11:**
+
+| model | check | drums | bass | other | vocals | guitar | piano | 20 s clip |
+|---|---|---|---|---|---|---|---|---|
+| htdemucs | full | 70.1 | 42.9 | 75.2 | 51.0 | | | 12.2 s |
+| htdemucs_6s | seg | 65.8 | **35.8 (FAIL)** | 73.6 | 53.5 | 48.9 | 49.2 | |
+| htdemucs_6s | full | 71.1 | 40.4 | 74.2 | 53.1 | 49.3 | 48.8 | 14.9 s |
+| htdemucs_ft | full | 72.8 | 37.5 | 77.4 | 51.5 | | | 48.9 s |
+
+| model | seg cos / SNR | full cos / SNR | 20 s clip |
+|---|---|---|---|
+| mel_band_roformer_kim | 0.9999923 / 47.9 | 0.9999994 / 59.1 | 27.5 s |
+| bs_roformer_viperx_317 | 0.9999808 / 44.1 | 0.9999575 / 29.0 | 66.6 s |
+
+Before 2026-10-02 HTDemucs did not run on Metal at all, at any ggml pin:
+
+- **Left padding.** Metal's `PAD` only pads on the right, and the transposed conv's
+  overlap-add padded its second half on the left: `unsupported op 'PAD'`. It now pads on the
+  right and rolls.
+- **`group_norm` over ne3.** Metal's `group_norm` ignores ne3, so the frequency branch's
+  per-row norms (one group over `[W, C, 1, H]`) were wrong from `enc0` on and reached NaN by
+  `enc3`. They now run as H groups over `[W, C, H]`, the same norm.
+
+Both are pure re-expressions: CPU stems are byte-identical to before (htdemucs, htdemucs_6s).

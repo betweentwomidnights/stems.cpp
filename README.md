@@ -1,21 +1,27 @@
 # stems.cpp
 
-Stem separation for the gary ecosystem: Meta's **HTDemucs v4** in C++ on
-[ggml](https://github.com/betweentwomidnights/ggml). No PyTorch, no Python at inference time.
+Stem separation for the gary ecosystem in C++ on [ggml](https://github.com/betweentwomidnights/ggml):
+Meta's **HTDemucs v4** for 4 and 6 stems, and the **RoFormer** family (Mel-Band and Band-Split)
+that UVR uses for vocals and instrumentals. No PyTorch, no Python at inference time.
 A sibling of [sa3.cpp](https://github.com/betweentwomidnights/sa3.cpp) and
 [audiocraft.cpp](https://github.com/betweentwomidnights/audiocraft.cpp): same ggml fork, same pin,
 same build scripts, same service shape. It exists because gary4juce's Carey extract tab says
 "if you have a stem separator it may work better". This is that separator.
 
-All three published checkpoints run and match PyTorch **sample for sample**. That means
+Every model matches its PyTorch reference **sample for sample**. For HTDemucs that means
 `demucs --shifts 0` on a 20 s song, through the whole split/overlap/trim path, at 71–126 dB SNR
-per stem (float32 rounding):
+per stem (float32 rounding). For the RoFormers it is the chunked `demix_track` the checkpoints
+were published with, at 62–73 dB on CPU and CUDA:
 
 | model | stems | params | GGUF |
 |---|---|---|---|
 | `htdemucs` | drums, bass, other, vocals | 42 M | 168 MB |
 | `htdemucs_6s` | + guitar, piano | 27 M | 110 MB |
 | `htdemucs_ft` | drums, bass, other, vocals (bag of 4 per-source fine-tunes, best quality, 4x the time) | 168 M | 672 MB |
+| `mel_band_roformer_kim` | vocals, instrumental ([Kim's Mel-Band RoFormer](https://huggingface.co/KimberleyJSN/melbandroformer), MIT) | 228 M | 913 MB (457 MB F16) |
+
+`bs_roformer` checkpoints (e.g. viperx's `ep_317`) convert and run too, with
+`tools/convert_roformer.py --arch bs_roformer`; none is published here yet.
 
 See [docs/PARITY.md](docs/PARITY.md) for the numbers and how to reproduce them.
 
@@ -28,6 +34,13 @@ cd stems.cpp
 ./models.sh             # htdemucs; ./models.sh all for the other two
 ```
 
+Until the RoFormer GGUFs are published, convert Kim's yourself (downloads the checkpoint from HF):
+
+```bash
+pip install torch numpy pyyaml librosa gguf huggingface_hub
+python tools/convert_roformer.py --preset kim models/mel_band_roformer_kim-f32.gguf   # --f16 for half the size
+```
+
 `build.sh` runs 4 compile jobs by default (`JOBS=8 ./build.sh cuda` to change it). An unbounded
 `-j` on ggml's CUDA kernels used up 32 GB and took the build machine down.
 Older nvcc with a newer gcc: `./build.sh cuda -DCMAKE_CUDA_HOST_COMPILER=g++-12`.
@@ -38,15 +51,19 @@ Older nvcc with a newer gcc: `./build.sh cuda -DCMAKE_CUDA_HOST_COMPILER=g++-12`
 stems-split -m models/htdemucs-f32.gguf -i song.wav -o stems/                     # 4 stems
 stems-split -m models/htdemucs-f32.gguf -i loop.wav -o stems/ --two-stems drums   # drums + no_drums
 stems-split -m models/htdemucs_6s-f32.gguf -i song.wav -o stems/ --stems guitar,piano
+stems-split -m models/mel_band_roformer_kim-f32.gguf -i song.wav -o stems/       # vocals + instrumental
 ```
 
 Any WAV works: 16/24/32-bit or float, any sample rate (band-limited resample to 44.1 kHz),
 mono or stereo. Stems come out 16-bit, scaled down only if they would clip (demucs'
 `--clip-mode rescale`), or `--float32`. `--shifts N` averages N random time shifts, like demucs,
-at N times the cost. `--overlap` defaults to 0.25.
+at N times the cost. `--overlap` defaults to the model's own: 0.25 for HTDemucs, 0.5 for the
+RoFormers (their `num_overlap: 2`).
 
 `no_X` from `--two-stems X` is the **sum of the other stems**. That is demucs' definition, and it
-is not the same as mix minus X.
+is not the same as mix minus X. A single-stem RoFormer is the other way round: it estimates
+vocals, and `instrumental` **is** the mix minus vocals, as in the inference script Kim's model
+was published with.
 
 ## Service
 
@@ -63,7 +80,7 @@ GET  /api/juce/poll_status/<id>  -> {status, progress, separation_in_progress, s
 ```
 
 Request: `audio_data` (base64 WAV) and optionally `model` (`htdemucs` | `htdemucs_6s` |
-`htdemucs_ft`), `two_stems`, `stems` (list), `shifts`, `overlap`, `seed`, `float32`. The session
+`htdemucs_ft` | `mel_band_roformer_kim`), `two_stems`, `stems` (list), `shifts`, `overlap`, `seed`, `float32`. The session
 and poll shape is audiocraft.cpp's, so gary4juce can reuse the client code it already has for
 terry. One job at a time. The model stays resident between requests and swaps when a different
 one is asked for.
@@ -103,7 +120,12 @@ plain C. Its output is byte-identical to `stems-split --float32`.
 
 - `src/separator.h` is the interface every model architecture implements. `load_separator()` reads
   `general.architecture` from the GGUF and builds the matching one, so libstems, `stems-split` and
-  `stems-server` never name a model class. HTDemucs is the first implementation.
+  `stems-server` never name a model class.
+- `src/roformer.cpp` covers Mel-Band and BS-RoFormer in one class: band split, `depth` x (time
+  transformer, freq transformer) with rotary attention, and a mask MLP per band, as one ggml graph
+  per 8 s chunk. The two architectures differ only in which STFT bins form each band, and
+  `tools/convert_roformer.py` writes that as plain index lists, so the runtime needs no librosa.
+  Attention runs in groups of sequences so the score tensor stays under 256 MB.
 - `src/htdemucs.cpp` holds the network as one ggml graph per 7.8 s segment: freq branch, time branch,
   and the 5-layer cross-transformer between them. Every conv is an F32 im2col plus matmul. Transposed convs
   are a matmul plus an explicit overlap-add, so only ops every backend has are used.

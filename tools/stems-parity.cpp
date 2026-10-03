@@ -8,12 +8,14 @@
 // Exit status is non-zero if any cosine falls below --min-cos (default 0.9999).
 #include "htdemucs.h"
 #include "npy.h"
+#include "roformer.h"
 #include "wav.h"
 
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 
 namespace {
@@ -33,10 +35,12 @@ Stat compare(const float* a, const float* ref, size_t n) {
     return {dot / std::sqrt(na * nr + 1e-30), 10.0 * std::log10(nr / (err + 1e-30)), mx};
 }
 
-bool report(const st::HTDemucs& m, const char* what, const float* got, const float* ref,
-            size_t per_source, double min_cos) {
+// Compares the first ref_len values: the reference holds the model's own stems, which come
+// first in sources() (a RoFormer's complement stem follows them and has no reference).
+bool report(const st::Separator& m, const char* what, const float* got, const float* ref,
+            size_t ref_len, size_t per_source, double min_cos) {
     bool ok = true;
-    for (size_t s = 0; s < m.sources().size(); s++) {
+    for (size_t s = 0; s < ref_len / per_source; s++) {
         const Stat r = compare(got + s * per_source, ref + s * per_source, per_source);
         ok = ok && r.cos >= min_cos;
         printf("  %-5s %-8s cos %.7f  snr %6.1f dB  max|d| %.2e%s\n", what, m.sources()[s].c_str(),
@@ -65,18 +69,24 @@ int main(int argc, char** argv) {
         return 2;
     }
     try {
-        st::HTDemucs m(model, device.empty() ? nullptr : device.c_str());
-        printf("%s on %s\n", m.name().c_str(), m.backend_name());
+        const char* dev = device.empty() ? nullptr : device.c_str();
+        std::unique_ptr<st::HTDemucs> htd;
+        std::unique_ptr<st::RoFormer> rof;
+        if (st::gguf_architecture(model) == "htdemucs") htd = std::make_unique<st::HTDemucs>(model, dev);
+        else rof = std::make_unique<st::RoFormer>(model, dev);
+        const st::Separator& m = htd ? static_cast<const st::Separator&>(*htd) : *rof;
+        printf("%s (%s) on %s\n", m.name().c_str(), m.architecture().c_str(), m.backend_name());
         bool ok = true;
 
         std::vector<size_t> sh;
         const std::vector<float> seg = st::read_npy_f32(refs + "/seg_in.npy", sh);
         const std::vector<float> seg_ref = st::read_npy_f32(refs + "/seg_out.npy", sh);
         auto t0 = std::chrono::steady_clock::now();
-        const std::vector<float> out = m.forward(0, seg.data(), dump);
+        const std::vector<float> out = htd ? htd->forward(0, seg.data(), dump) : rof->forward(seg.data());
         auto t1 = std::chrono::steady_clock::now();
         printf("segment forward: %.2f s\n", std::chrono::duration<double>(t1 - t0).count());
-        ok &= report(m, "seg", out.data(), seg_ref.data(), out.size() / m.sources().size(), min_cos);
+        const size_t seg_per = (size_t)m.audio_channels() * m.segment_samples();
+        ok &= report(m, "seg", out.data(), seg_ref.data(), seg_ref.size(), seg_per, min_cos);
 
         if (!wav.empty()) {
             int n = 0, ch = 0, sr = 0;
@@ -91,7 +101,8 @@ int main(int argc, char** argv) {
             t1 = std::chrono::steady_clock::now();
             printf("separate %.1f s of audio: %.2f s\n", (double)n / sr,
                    std::chrono::duration<double>(t1 - t0).count());
-            ok &= report(m, "full", full.data(), full_ref.data(), full.size() / m.sources().size(), min_cos);
+            ok &= report(m, "full", full.data(), full_ref.data(), full_ref.size(), (size_t)m.audio_channels() * n,
+                         min_cos);
         }
         printf(ok ? "PASS\n" : "FAIL\n");
         return ok ? 0 : 1;

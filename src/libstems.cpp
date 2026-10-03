@@ -66,7 +66,7 @@ void STEMS_CALL request_init(stems_request_v1* r) {
     r->input.size = sizeof(stems_audio_view_v1);
     audio_view_init(&r->input);
     r->shifts = 0;
-    r->overlap = 0.25f;
+    r->overlap = -1.0f;
     r->seed = 0;
     r->on_progress = nullptr;
     r->should_cancel = nullptr;
@@ -149,8 +149,8 @@ stems_status_v1 STEMS_CALL separate(stems_context* ctx, const stems_request_v1* 
         return fail(err, STEMS_STATUS_INVALID_ARGUMENT_V1, "input is too long");
     if (req->shifts < 0 || req->shifts > 10)
         return fail(err, STEMS_STATUS_INVALID_ARGUMENT_V1, "shifts must be 0..10");
-    if (!(req->overlap >= 0.0f && req->overlap < 1.0f))
-        return fail(err, STEMS_STATUS_INVALID_ARGUMENT_V1, "overlap must be in [0, 1)");
+    if (!(req->overlap < 1.0f))
+        return fail(err, STEMS_STATUS_INVALID_ARGUMENT_V1, "overlap must be < 1 (negative = model default)");
 
     try {
         const st::Separator& m = *ctx->model;
