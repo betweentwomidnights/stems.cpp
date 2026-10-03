@@ -98,11 +98,18 @@ runtime adds is mix minus vocals, computed in float.
 |---|---|---|---|---|
 | mel_band_roformer_kim | CPU | 0.9999992 / 57.0 | 1.0000000 / 72.7 | 151 s |
 | mel_band_roformer_kim | CUDA | 0.9999992 / 57.0 | 1.0000000 / 72.7 | 9.8 s |
-| mel_band_roformer_kim | Vulkan | 0.9999879 / 45.2 | 0.9999996 / 57.8 | 5.2 s |
+| mel_band_roformer_kim | Vulkan | 0.9999992 / 57.0 | 1.0000000 / 72.7 | 6.6 s |
 | mel_band_roformer_kim, F16 weights | CUDA | 0.9999914 / 46.9 | 0.9999998 / 61.0 | 10.0 s |
+| mel_band_roformer_kim, F16 weights | Vulkan | 0.9999921 / 47.6 | 0.9999997 / 59.8 | 5.2 s |
 | bs_roformer_viperx_317 | CPU | 0.9999999 / 69.6 | 0.9999999 / 65.2 | 411 s |
 | bs_roformer_viperx_317 | CUDA | 0.9999999 / 69.5 | 0.9999999 / 62.4 | 22.4 s |
-| bs_roformer_viperx_317 | Vulkan | 0.9999812 / 44.2 | 0.9999408 / 33.6 | 10.4 s |
+| bs_roformer_viperx_317 | Vulkan | 0.9999999 / 69.6 | 0.9999999 / 63.1 | 14.2 s |
+
+Vulkan is RTX 5070 Laptop (coopmat2), ggml `07f9348a`. Before betweentwomidnights/ggml#7, Vulkan
+rounded the operands of every F32 x F32 matmul to fp16 whatever `GGML_PREC_F32` said, and these
+rows read 45.2 / 57.8 (Kim) and 44.2 / 33.6 dB (viperx). Getting fp32 back costs about 40% on
+this card: Kim went from 4.7 to 6.6 s and viperx from 9.2 to 14.2 s. A caller that would
+rather have the speed can drop `GGML_PREC_F32` on the matmuls.
 
 The seg SNRs look low next to the full ones because the first chunk is mostly the reflected
 intro, where the vocal stem is near silence: the largest absolute error there is 4e-8. F16
