@@ -17,7 +17,7 @@ case "$BACKEND" in
 esac
 
 echo "[stems] configuring $BACKEND -> $DIR/"
-cmake -S . -B "$DIR" -DCMAKE_BUILD_TYPE=Release "${FLAGS[@]}" "${EXTRA[@]}"
+cmake -S . -B "$DIR" -DCMAKE_BUILD_TYPE=Release "${FLAGS[@]}" ${EXTRA[@]+"${EXTRA[@]}"}   # bash 3.2 (macOS): empty array + set -u
 # Bounded: an unbounded -j on the CUDA kernels exhausted 32 GB and took the box down.
 JOBS="${JOBS:-4}"
 cmake --build "$DIR" --config Release --parallel "$JOBS"
@@ -25,12 +25,11 @@ echo "[stems] built $BACKEND -> $DIR/bin/"
 
 # Backends live in separate dirs, so rebuilding one leaves the others on old code. A stale
 # build-cuda/ once shipped stems that were mostly noise; say so rather than let it happen quietly.
-newest_src=$(find src tools -type f -printf '%T@\n' | sort -n | tail -1)
 for other in build build-*; do
   [ "$other" = "$DIR" ] && continue
   bin="$other/bin/stems-split"
   [ -x "$bin" ] || continue
-  if awk -v a="$(stat -c %Y "$bin")" -v b="$newest_src" 'BEGIN{exit !(a < b)}'; then
+  if [ -n "$(find src tools -type f -newer "$bin" | head -1)" ]; then   # -newer: GNU and BSD find
     echo "[stems] WARNING: $other/ is older than the sources; rebuild it before use" >&2
   fi
 done
