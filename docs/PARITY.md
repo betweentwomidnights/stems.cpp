@@ -79,3 +79,66 @@ produced stems that were mostly noise above 8 kHz and did not sum back to the mi
 The single-segment check still passed, because the bug only shows from the second segment on.
 Only the `full` check catches it. `build.sh` now warns when another build dir is older than
 the sources. Run `stems-parity --wav` on whichever build you are about to use.
+
+## RoFormers
+
+Measured 2026-10-02 on Windows (Core Ultra 9 275HX, RTX 5070 Laptop GPU), same 20 s test clip.
+The reference is the model code each checkpoint was published with, run in float32 on CPU:
+Kim's own `MelBandRoformer` for `mel_band_roformer_kim`, ZFTurbo's MSST `BSRoformer` for viperx's
+`ep_317`. Chunking is `demix_track` (8 s chunks, `num_overlap: 2`, linear fades, reflect-padded
+borders) in both.
+
+- **seg** is one raw `model(x)` on the first chunk, exactly as `demix_track` feeds it.
+- **full** is `demix_track` over the whole clip.
+
+Both are single-stem vocal models, so there is one stem to compare. The `instrumental` the
+runtime adds is mix minus vocals, computed in float.
+
+| model | backend | seg cos / SNR | full cos / SNR | 20 s clip |
+|---|---|---|---|---|
+| mel_band_roformer_kim | CPU | 0.9999992 / 57.0 | 1.0000000 / 72.7 | 151 s |
+| mel_band_roformer_kim | CUDA | 0.9999992 / 57.0 | 1.0000000 / 72.7 | 9.8 s |
+| mel_band_roformer_kim | Vulkan | 0.9999879 / 45.2 | 0.9999996 / 57.8 | 5.2 s |
+| mel_band_roformer_kim, F16 weights | CUDA | 0.9999914 / 46.9 | 0.9999998 / 61.0 | 10.0 s |
+| bs_roformer_viperx_317 | CPU | 0.9999999 / 69.6 | 0.9999999 / 65.2 | 411 s |
+| bs_roformer_viperx_317 | CUDA | 0.9999999 / 69.5 | 0.9999999 / 62.4 | 22.4 s |
+| bs_roformer_viperx_317 | Vulkan | 0.9999812 / 44.2 | 0.9999408 / 33.6 | 10.4 s |
+
+The seg SNRs look low next to the full ones because the first chunk is mostly the reflected
+intro, where the vocal stem is near silence: the largest absolute error there is 4e-8. F16
+weights halve Kim's GGUF and stay far below anything audible. MSST and UVR run these models
+under fp16 autocast on CUDA anyway.
+
+### Two things the reference code does that the config doesn't say
+
+- **Mask MLP depth.** `mask_estimator_depth: 2` builds three Linear layers in Kim's copy of the
+  code and two in MSST's (`MLP` changed its meaning of `depth`). The converter counts the
+  layers in the checkpoint and writes `roformer.mask_layers`, so the config's number is never trusted.
+- **`zero_dc`.** MSST's BS- and Mel-Band RoFormer zero the DC bin of the masked spectrogram
+  before the iSTFT (`zero_dc=True` by default); Kim's code does not. Without it viperx's first
+  chunk matched at only cos 0.984. The converter writes `roformer.zero_dc`: on for MSST
+  checkpoints, off for Kim's.
+
+### Reproduce
+
+```bash
+.venv-ref/bin/pip install torch numpy soundfile librosa pyyaml ml_collections gguf huggingface_hub \
+    einops==0.6.1 beartype==0.14.1 rotary_embedding_torch==0.3.5
+python tools/convert_roformer.py --preset kim models/mel_band_roformer_kim-f32.gguf
+python tools/dump_refs_roformer.py kim tests/data/test.wav tests/refs/mel_band_roformer_kim
+build/bin/stems-parity --model models/mel_band_roformer_kim-f32.gguf \
+    --refs tests/refs/mel_band_roformer_kim --wav tests/data/test.wav
+```
+
+For viperx, download `model_bs_roformer_ep_317_sdr_12.9755.ckpt` from UVR's model repo and its
+config from MSST's `configs/viperx/`, then `convert_roformer.py --arch bs_roformer --ckpt ...
+--config ... --name bs_roformer_viperx_317 --complement instrumental` and
+`dump_refs_roformer.py viperx_bs_317 ... --ckpt ...`.
+
+## Vulkan is not exact
+
+ggml's Vulkan matmul shaders lose precision that CPU and CUDA keep, with or without cooperative
+matrices (`GGML_VK_DISABLE_COOPMAT=1` made it worse). The RoFormers stay at 33–58 dB, but
+HTDemucs does not hold up. On the same clip and GPU, `htdemucs` bass and vocals fall to
+33–36 dB, and `htdemucs_6s` to 10–18 dB on vocals, guitar, piano and bass (cos 0.958 for
+vocals). Under investigation; until then, use CUDA or CPU when the stems must be exact.

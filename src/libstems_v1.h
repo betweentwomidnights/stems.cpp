@@ -108,7 +108,8 @@ typedef struct {
     uint32_t size;
     stems_audio_view_v1 input;  /* frozen by-value type */
     int32_t shifts;             /* random time shifts averaged; 0 = one deterministic pass */
-    float overlap;              /* segment overlap, [0, 1); default 0.25 */
+    float overlap;              /* segment overlap, [0, 1); negative (the default) = the model's
+                                   own: 0.25 for HTDemucs, 0.5 for the published RoFormers */
     uint32_t seed;              /* for the shift offsets */
     stems_progress_callback_v1 on_progress;
     stems_cancel_callback_v1 should_cancel;

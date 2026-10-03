@@ -556,7 +556,8 @@ std::vector<float> HTDemucs::separate(const float* mix_in, int len, const Separa
             }
     };
 
-    const int stride = (int)((1.0 - (double)opt.overlap) * seg);
+    const double overlap = opt.overlap < 0.0f ? 0.25 : (double)opt.overlap;
+    const int stride = (int)((1.0 - overlap) * seg);
     if (stride <= 0) throw std::invalid_argument("overlap must be < 1");
     std::vector<float> weight(seg);
     {

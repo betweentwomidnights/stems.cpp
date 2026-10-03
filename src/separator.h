@@ -20,8 +20,9 @@ struct SeparateOptions {
     // Random time shifts averaged for time equivariance (demucs --shifts). Each shift is a
     // full extra pass. 0 = one deterministic pass.
     int shifts = 0;
-    // Overlap between consecutive segments.
-    float overlap = 0.25f;
+    // Overlap between consecutive segments, [0, 1). Negative = the model's own default
+    // (0.25 for HTDemucs, the checkpoint's num_overlap for RoFormers).
+    float overlap = -1.0f;
     // Seed for the shift offsets.
     uint32_t seed = 0;
     // Called with (done, total) segment passes.
