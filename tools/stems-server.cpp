@@ -82,8 +82,36 @@ std::vector<std::string> list_ggufs() {
     return out;
 }
 
-// "htdemucs" -> models/htdemucs-f16.gguf or -f32.gguf, whichever exists (f16 first).
+// The encoding of a canonical file name for model `name`, <name>-<size>-v<version>-<ENC>.gguf
+// (docs/DISTRIBUTION.md): htdemucs-42M-v1.0-F32.gguf -> "F32". Empty if `file` is not one.
+// The size label has no '-', so "htdemucs" never matches htdemucs_6s-27M-v1.0-F32.gguf.
+std::string canonical_encoding(const std::string& file, const std::string& name) {
+    const std::string prefix = name + "-", ext = ".gguf";
+    if (file.size() <= prefix.size() + ext.size() || file.compare(0, prefix.size(), prefix) != 0 ||
+        file.compare(file.size() - ext.size(), ext.size(), ext) != 0) return {};
+    const std::string rest = file.substr(prefix.size(), file.size() - prefix.size() - ext.size());
+    std::vector<std::string> parts;   // <size>, v<version>, <ENC>
+    for (size_t i = 0;;) {
+        const size_t j = rest.find('-', i);
+        parts.push_back(rest.substr(i, j == std::string::npos ? std::string::npos : j - i));
+        if (j == std::string::npos) break;
+        i = j + 1;
+    }
+    if (parts.size() != 3 || parts[0].empty() || parts[1].size() < 2 || parts[1][0] != 'v' || parts[2].empty())
+        return {};
+    return parts[2];
+}
+
+// "htdemucs" -> a GGUF in the models dir. Canonical names first, F16 then F32 (the newest
+// version wins), then the older htdemucs-f16.gguf / -f32.gguf / .gguf.
 std::string find_model(const std::string& name) {
+    const std::vector<std::string> files = list_ggufs();   // sorted, so later versions come last
+    for (const char* enc : {"F16", "F32"}) {
+        std::string best;
+        for (const std::string& f : files)
+            if (canonical_encoding(f, name) == enc) best = f;
+        if (!best.empty()) return g_models_dir + "/" + best;
+    }
     for (const char* suffix : {"-f16.gguf", "-f32.gguf", ".gguf"}) {
         const std::string path = g_models_dir + "/" + name + suffix;
         if (file_exists(path)) return path;
@@ -163,6 +191,7 @@ std::string run_separate(SeparateRequest req, const std::string& session) {
     if (path.empty()) throw std::runtime_error("no GGUF for model '" + req.model + "' in " + g_models_dir);
     if (!g_model || g_model_path != path) {
         g_model.reset();
+        fprintf(stderr, "[stems] model %s: %s\n", req.model.c_str(), path.c_str());
         g_model = st::load_separator(path, g_device.empty() ? nullptr : g_device.c_str());
         g_model_path = path;
     }
@@ -214,7 +243,9 @@ void usage() {
         "usage: stems-server [--port 8010] [--host 127.0.0.1] [--models-dir DIR] [--device NAME]\n"
         "\n"
         "Stem separation over HTTP. Models are found in --models-dir (or\n"
-        "STEMS_MODELS_DIR) as <name>-f16.gguf / <name>-f32.gguf.\n");
+        "STEMS_MODELS_DIR) by name: <name>-<size>-v<version>-F16.gguf or -F32.gguf, as\n"
+        "./models.sh downloads them (e.g. htdemucs-42M-v1.0-F32.gguf), or the older\n"
+        "<name>-f16.gguf / <name>-f32.gguf.\n");
 }
 
 } // namespace

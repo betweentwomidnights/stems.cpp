@@ -1,6 +1,6 @@
 // stems-parity — compare the ggml port against PyTorch reference arrays.
 //
-//   stems-parity --model models/htdemucs-f32.gguf --refs tests/refs/htdemucs \
+//   stems-parity --model models/htdemucs-42M-v1.0-F32.gguf --refs tests/refs/htdemucs \
 //                [--wav tests/data/test.wav] [--dump /tmp/taps]
 //
 // Checks one raw segment forward (seg_in.npy -> seg_out.npy) and, with --wav, the whole

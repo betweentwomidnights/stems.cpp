@@ -76,7 +76,7 @@ typedef struct {
 
 typedef struct {
     uint32_t size;
-    const char* model_path;     /* a stems.cpp GGUF, e.g. models/htdemucs-f32.gguf */
+    const char* model_path;     /* a stems.cpp GGUF, e.g. models/htdemucs-42M-v1.0-F32.gguf */
     const char* device;         /* NULL or "" = best GPU, falling back to CPU; "cpu" = CPU */
     int32_t cpu_threads;        /* 0 = ggml default */
 } stems_context_config_v1;

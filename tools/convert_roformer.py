@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Convert a Mel-Band RoFormer or BS-RoFormer checkpoint to GGUF.
 
-    python tools/convert_roformer.py --preset kim models/mel_band_roformer_kim-f32.gguf
+    python tools/convert_roformer.py --preset kim models/            # -> mel_band_roformer_kim-0.2B-v1.0-F32.gguf
+    python tools/convert_roformer.py --preset viperx --ckpt model_bs_roformer_ep_317_sdr_12.9755.ckpt \\
+        --config model_bs_roformer_ep_317_sdr_12.9755.yaml models/   # -> bs_roformer_viperx_317-0.2B-v1.0-F32.gguf
     python tools/convert_roformer.py --arch bs_roformer --ckpt model.ckpt --config config.yaml \\
         --name bs_roformer_x models/bs_roformer_x-f32.gguf
+
+Given a directory, the file gets its canonical name (docs/DISTRIBUTION.md); a file path is
+used as is. --f16 stores the 2D matmul weights as F16.
 
 Checkpoints are the state_dicts lucidrains' BS-RoFormer code produces, as trained with
 ZFTurbo's Music-Source-Separation-Training (and Kim's Mel-Band RoFormer vocal model); the
@@ -19,18 +24,25 @@ What the converter folds so the runtime is one code path for both architectures:
 """
 
 import argparse
+import os
 import re
 import sys
+from pathlib import Path
 
 import numpy as np
 from gguf import GGUFWriter, GGMLQuantizationType
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gguf_meta  # noqa: E402
 
 PRESETS = {
     # KimberleyJSN/melbandroformer (MIT): vocals; the instrumental is the mix minus vocals.
     "kim": dict(
         arch="mel_band_roformer", name="mel_band_roformer_kim",
         ckpt="hf:KimberleyJSN/melbandroformer/MelBandRoformer.ckpt",
-        source_url="https://huggingface.co/KimberleyJSN/melbandroformer", license="MIT",
+        source_url="https://huggingface.co/KimberleyJSN/melbandroformer", license="mit",
+        source=dict(name="melbandroformer", organization="KimberleyJSN",
+                    version="ac9b0614ab3cd7f77219e18ba494dfd93956c348", files=["MelBandRoformer.ckpt"]),
         config=dict(
             model=dict(dim=384, depth=6, stereo=True, num_stems=1, time_transformer_depth=1,
                        freq_transformer_depth=1, num_bands=60, dim_head=64, heads=8,
@@ -40,6 +52,16 @@ PRESETS = {
             training=dict(instruments=["vocals", "other"], target_instrument="vocals"),
             inference=dict(num_overlap=2, chunk_size=352800)),
         complement="instrumental", zero_dc=False),
+    # viperx's BS-RoFormer ep_317 (vocals), as released in UVR's model repo. No license is
+    # stated anywhere upstream, hence "other". The checkpoint and MSST's config YAML
+    # (configs/viperx/) are local files: pass --ckpt and --config.
+    "viperx": dict(
+        arch="bs_roformer", name="bs_roformer_viperx_317", license="other",
+        source_url="https://github.com/TRvlvr/model_repo/releases/tag/all_public_uvr_models",
+        source=dict(name="BS-RoFormer ep_317 (viperx)", organization="TRvlvr/model_repo (UVR)",
+                    version="sha256:5b84f37e8d444c8cb30c79d77f613a41c05868ff9c9ac6c7049c00aefae115aa",
+                    files=["model_bs_roformer_ep_317_sdr_12.9755.ckpt"]),
+        complement="instrumental"),
 }
 
 ROPE_THETA = 10000.0
@@ -106,7 +128,7 @@ def rename(k):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("out")
+    ap.add_argument("out", help="output file, or a directory to use the canonical file name")
     ap.add_argument("--preset", choices=sorted(PRESETS))
     ap.add_argument("--arch", choices=["mel_band_roformer", "bs_roformer"])
     ap.add_argument("--ckpt", help="checkpoint path, or hf:<repo>/<file>")
@@ -157,10 +179,7 @@ def main():
             if v.shape != ref.shape or not np.allclose(v, ref, rtol=1e-6):
                 raise SystemExit(f"{k}: rotary frequencies are not theta={ROPE_THETA} over dim_head")
 
-    w = GGUFWriter(args.out, p["arch"])
-    w.add_name(p["name"])
-    if p.get("license"):
-        w.add_license(p["license"])
+    w = GGUFWriter(None, p["arch"])   # the path depends on the parameter count, known at the end
     if p.get("source_url"):
         w.add_source_url(p["source_url"])
     w.add_string("stems.model", p["name"])
@@ -192,7 +211,7 @@ def main():
     w.add_array("roformer.band_sizes", [len(b) for b in bands])
     w.add_array("roformer.band_freqs", [f for b in bands for f in b])
 
-    n = 0
+    n = n_params = 0
     for k, v in sd.items():
         name = rename(k)
         if name is None:
@@ -203,16 +222,27 @@ def main():
         else:
             w.add_tensor(name, v.astype(np.float32))
         n += 1
+        n_params += v.size
     want_bands = len(bands)
     got_bands = len({k.split(".")[1] for k in (rename(k) for k in sd) if k and k.startswith("band.")})
     if got_bands != want_bands:
         raise SystemExit(f"checkpoint has {got_bands} bands, config says {want_bands}")
 
-    w.write_header_to_file()
+    gguf_meta.add_general(w, p["name"], n_params, p.get("license") or "other")
+    if p.get("source"):
+        src = p["source"]
+        gguf_meta.add_source(w, src["name"], src["organization"], p.get("source_url", ""),
+                             src["version"], src.get("files"))
+
+    out = args.out
+    if os.path.isdir(out):
+        out = os.path.join(out, gguf_meta.filename(p["name"], gguf_meta.size_label(n_params),
+                                                   "F16" if args.f16 else "F32"))
+    w.write_header_to_file(Path(out))
     w.write_kv_data_to_file()
     w.write_tensors_to_file()
     w.close()
-    print(f"wrote {n} tensors, {len(bands)} bands, sources {sources} -> {args.out}")
+    print(f"wrote {n} tensors, {n_params / 1e6:.1f}M params, {len(bands)} bands, sources {sources} -> {out}")
 
 
 if __name__ == "__main__":
