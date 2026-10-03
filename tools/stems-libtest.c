@@ -113,7 +113,8 @@ int main(int argc, char** argv) {
     stems_model_info_v1 info;
     memset(&info, 0, sizeof info); info.size = sizeof info; api->model_info_init(&info);
     if (api->model_info(ctx, &info, &err) != STEMS_STATUS_OK_V1) { fprintf(stderr, "%s\n", err.message); return 1; }
-    printf("%s on %s: %u stems at %u Hz\n", info.name, info.backend, info.n_sources, info.sample_rate);
+    printf("%s (%s) on %s: %u stems at %u Hz\n", info.name, info.architecture, info.backend,
+           info.n_sources, info.sample_rate);
 
     uint64_t n = 0; uint32_t ch = 0, sr = 0;
     float* audio = read_wav(argv[2], &n, &ch, &sr);

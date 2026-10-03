@@ -1,9 +1,9 @@
-// libstems.cpp — the V1 C ABI over st::HTDemucs. See libstems_v1.h for the contract.
+// libstems.cpp — the V1 C ABI over st::Separator. See libstems_v1.h for the contract.
 #define STEMS_BUILD_DLL
 #include "libstems_v1.h"
 
 #include "audio.h"
-#include "htdemucs.h"
+#include "separator.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -16,7 +16,7 @@
 #define STEMS_RUNTIME_VERSION "stems.cpp 0.1.0 (libstems abi 1)"
 
 struct stems_context {
-    std::unique_ptr<st::HTDemucs> model;
+    std::unique_ptr<st::Separator> model;
 };
 
 namespace {
@@ -85,7 +85,7 @@ void STEMS_CALL result_init(stems_result_v1* r) {
 void STEMS_CALL model_info_init(stems_model_info_v1* i) {
     if (!sized(i, STEMS_MODEL_INFO_V1_MIN_SIZE)) return;
     const uint32_t size = i->size;
-    memset(i, 0, STEMS_MODEL_INFO_V1_MIN_SIZE);
+    memset(i, 0, size >= STEMS_MODEL_INFO_V1_1_SIZE ? STEMS_MODEL_INFO_V1_1_SIZE : STEMS_MODEL_INFO_V1_MIN_SIZE);
     i->size = size;
 }
 
@@ -99,7 +99,7 @@ stems_status_v1 STEMS_CALL context_create(const stems_context_config_v1* cfg, st
         return fail(err, STEMS_STATUS_INVALID_ARGUMENT_V1, "config.model_path is required");
     try {
         auto ctx = std::make_unique<stems_context>();
-        ctx->model = std::make_unique<st::HTDemucs>(cfg->model_path,
+        ctx->model = st::load_separator(cfg->model_path,
             (cfg->device && *cfg->device) ? cfg->device : nullptr, cfg->cpu_threads);
         if (ctx->model->sources().size() > STEMS_MAX_SOURCES_V1)
             return fail(err, STEMS_STATUS_MODEL_ERROR_V1, "model has more sources than ABI V1 can describe");
@@ -118,7 +118,7 @@ stems_status_v1 STEMS_CALL model_info(stems_context* ctx, stems_model_info_v1* i
     if (!ctx || !ctx->model) return fail(err, STEMS_STATUS_INVALID_ARGUMENT_V1, "context is NULL");
     if (!sized(info, STEMS_MODEL_INFO_V1_MIN_SIZE))
         return fail(err, STEMS_STATUS_INVALID_ARGUMENT_V1, "info is NULL or info.size is too small");
-    const st::HTDemucs& m = *ctx->model;
+    const st::Separator& m = *ctx->model;
     info->name = m.name().c_str();
     info->backend = m.backend_name();
     info->n_sources = (uint32_t)m.sources().size();
@@ -128,6 +128,7 @@ stems_status_v1 STEMS_CALL model_info(stems_context* ctx, stems_model_info_v1* i
     info->audio_channels = (uint32_t)m.audio_channels();
     info->n_models = (uint32_t)m.n_models();
     info->segment_samples = (uint32_t)m.segment_samples();
+    if (info->size >= STEMS_MODEL_INFO_V1_1_SIZE) info->architecture = m.architecture().c_str();
     return STEMS_STATUS_OK_V1;
 }
 
@@ -152,7 +153,7 @@ stems_status_v1 STEMS_CALL separate(stems_context* ctx, const stems_request_v1* 
         return fail(err, STEMS_STATUS_INVALID_ARGUMENT_V1, "overlap must be in [0, 1)");
 
     try {
-        st::HTDemucs& m = *ctx->model;
+        const st::Separator& m = *ctx->model;
         const int n = (int)in.n_samples, ch = (int)in.n_channels, sr = (int)in.sample_rate;
         const int C = m.audio_channels(), R = m.samplerate(), S = (int)m.sources().size();
 

@@ -7,6 +7,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 
+# M_PI and friends (stft.h, audio.h) are POSIX, not standard C++; MSVC hides them behind this.
+if(MSVC)
+    add_compile_definitions(_USE_MATH_DEFINES)
+endif()
+
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
@@ -111,10 +116,12 @@ if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND
 endif()
 add_subdirectory(ggml)
 
-add_library(stems STATIC src/htdemucs.cpp)
+add_library(stems STATIC src/separator.cpp src/htdemucs.cpp)
 target_include_directories(stems PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(stems PUBLIC ggml)
-set_target_properties(stems PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# The archive is stems_core so it never shares a file name with libstems: on MSVC stems.dll's
+# import library is stems.lib, and with STEMS_STATIC both would be libstems.a.
+set_target_properties(stems PROPERTIES POSITION_INDEPENDENT_CODE ON OUTPUT_NAME stems_core)
 
 # --- libstems: C ABI library (embed stems in a host app; see src/libstems_v1.h) -------------
 # Windows: stems.dll + stems.lib (import lib).  Linux/macOS: libstems.so / libstems.dylib.

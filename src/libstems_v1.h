@@ -1,4 +1,4 @@
-/* libstems V1 — stable C ABI for embedding stems.cpp (HTDemucs stem separation).
+/* libstems V1 — stable C ABI for embedding stems.cpp (stem separation on ggml).
  *
  * Same contract as sa3.cpp's libsa3 V1, so a host that already embeds one can embed the other:
  *
@@ -138,6 +138,8 @@ typedef struct {
     uint32_t audio_channels;    /* 2 */
     uint32_t n_models;          /* > 1 for a bag (htdemucs_ft) */
     uint32_t segment_samples;
+    /* Appended in V1.1; read it only when size >= STEMS_MODEL_INFO_V1_1_SIZE. */
+    const char* architecture;   /* GGUF general.architecture, e.g. "htdemucs" */
 } stems_model_info_v1;
 
 typedef struct stems_api_v1 {
@@ -178,6 +180,7 @@ typedef struct stems_api_v1 {
 #define STEMS_REQUEST_V1_MIN_SIZE        STEMS_FIELD_END_(stems_request_v1, callback_user)
 #define STEMS_RESULT_V1_MIN_SIZE         STEMS_FIELD_END_(stems_result_v1, reserved)
 #define STEMS_MODEL_INFO_V1_MIN_SIZE     STEMS_FIELD_END_(stems_model_info_v1, segment_samples)
+#define STEMS_MODEL_INFO_V1_1_SIZE       STEMS_FIELD_END_(stems_model_info_v1, architecture)
 #define STEMS_API_V1_MIN_SIZE            STEMS_FIELD_END_(stems_api_v1, result_free)
 
 /* The only symbol a dynamically loaded consumer needs to resolve. NULL for an unsupported ABI

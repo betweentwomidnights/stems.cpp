@@ -101,6 +101,9 @@ plain C. Its output is byte-identical to `stems-split --float32`.
 
 ## How it's put together
 
+- `src/separator.h` is the interface every model architecture implements. `load_separator()` reads
+  `general.architecture` from the GGUF and builds the matching one, so libstems, `stems-split` and
+  `stems-server` never name a model class. HTDemucs is the first implementation.
 - `src/htdemucs.cpp` holds the network as one ggml graph per 7.8 s segment: freq branch, time branch,
   and the 5-layer cross-transformer between them. Every conv is an F32 im2col plus matmul. Transposed convs
   are a matmul plus an explicit overlap-add, so only ops every backend has are used.
