@@ -80,6 +80,53 @@ The single-segment check still passed, because the bug only shows from the secon
 Only the `full` check catches it. `build.sh` now warns when another build dir is older than
 the sources. Run `stems-parity --wav` on whichever build you are about to use.
 
+## Vulkan (RTX 5070 Laptop, coopmat2)
+
+Measured 2026-10-02 with ggml `07f9348a`, Vulkan SDK 1.4.350.0, same refs and test clip. Every
+stem of every model passes at cosine 1.0000000, and the numbers match the CPU table above:
+
+| model | check | drums | bass | other | vocals | guitar | piano | 20 s clip |
+|---|---|---|---|---|---|---|---|---|
+| htdemucs | full | 118.1 | 84.9 | 124.2 | 78.3 | | | 2.2 s |
+| htdemucs_6s | full | 124.3 | 82.8 | 125.8 | 75.2 | 76.9 | 80.7 | 2.3 s |
+| htdemucs_ft | full | 117.5 | 80.7 | 124.2 | 70.6 | | | 8.5 s |
+
+The same holds with `GGML_VK_DISABLE_COOPMAT2=1` (coopmat1), with both coopmat paths disabled
+(scalar shaders), and on the laptop's Intel iGPU.
+
+### fp16 operands in ggml-vulkan's F32 matmuls
+
+Before ggml `217f0f2d` (betweentwomidnights/ggml#7), Vulkan failed parity on this card while CPU and CUDA passed:
+
+| model | check | drums | bass | other | vocals | guitar | piano |
+|---|---|---|---|---|---|---|---|
+| htdemucs | full | 57.8 | 32.8 | 64.4 | 35.6 | | |
+| htdemucs_6s | full | 68.2 | 17.6 | 68.1 | 10.5 | 11.5 | 15.5 |
+| htdemucs_ft | full | 57.0 | 29.5 | 63.8 | 29.8 | | |
+
+`stems-parity --dump` showed the error was already about 68 dB at `enc0`, the first
+convolution, and stayed there through every layer. That points to per-op rounding, not
+something accumulating. On any device with fp16 support, ggml-vulkan rounds both operands of
+an F32 x F32 matmul to fp16. The scalar shader keeps its shared-memory tiles in fp16, the
+coopmat shaders use fp16 matrices, and the coopmat2 path converts F32 inputs to fp16 up front.
+`ggml_mul_mat_set_prec(GGML_PREC_F32)` only picked the accumulator. A -65 dB noise floor
+relative to the mix is invisible on loud stems and ruins quiet ones. That is why vocals,
+guitar and piano in this clip suffered most. It is also why disabling coopmat did not help:
+the scalar fallback rounds to fp16 too. Only `GGML_VK_DISABLE_F16=1` together with both
+coopmat switches restored parity.
+
+The fork now honours `GGML_PREC_F32` on contiguous F32 x F32 matmuls. It runs them on the
+fp32 build of the scalar shader, and every matmul in `htdemucs.cpp` already asks for that
+precision. On this card it costs no measurable time for HTDemucs.
+
+The pin, `f30f0cdc` (betweentwomidnights/ggml#11), is the commit shared by every consumer of the
+fork. It is `07f9348a` (#10: #7 plus two Vulkan fixes HTDemucs does not depend on, #8 for the batch
+stride of a matmul over a strided view and #9 for `PAD_REFLECT_1D`) with the Metal counterpart of #7
+on top. #7 must not ship without #8. Before #7, coopmat2 copied every F32 input to a staging
+buffer, and that copy hid #8's bug; `GGML_PREC_F32` now skips the copy. The table above was
+re-measured at `07f9348a` and is identical to `217f0f2d` alone. #11 changes only Metal sources, so
+it is unchanged at `f30f0cdc`.
+
 ## RoFormers
 
 Measured 2026-10-02 on Windows (Core Ultra 9 275HX, RTX 5070 Laptop GPU), same 20 s test clip.
@@ -142,19 +189,40 @@ config from MSST's `configs/viperx/`, then `convert_roformer.py --arch bs_roform
 --config ... --name bs_roformer_viperx_317 --complement instrumental` and
 `dump_refs_roformer.py viperx_bs_317 ... --ckpt ...`.
 
-## Vulkan is not exact
+## Vulkan
 
-ggml's Vulkan matmul shaders lose precision that CPU and CUDA keep, with or without cooperative
-matrices (`GGML_VK_DISABLE_COOPMAT=1` made it worse). The RoFormers stay at 33–58 dB, but
-HTDemucs does not hold up. On the same clip and GPU, `htdemucs` bass and vocals fall to
-33–36 dB, and `htdemucs_6s` to 10–18 dB on vocals, guitar, piano and bass (cos 0.958 for
-vocals). Under investigation; until then, use CUDA or CPU when the stems must be exact.
+The Vulkan rows above are at ggml `07f9348a` and later. Before betweentwomidnights/ggml#7, ggml's
+Vulkan F32 matmuls rounded their operands to fp16 whatever precision was asked for. The RoFormers
+then sat at 33–58 dB, and HTDemucs failed (see "fp16 operands in ggml-vulkan's F32 matmuls" above).
+Both now match CPU. The cost on this card is about 40% on the RoFormers and nothing measurable on
+HTDemucs.
 
 ## Metal (Apple M4)
 
-Measured 2026-10-02 on an Apple M4 Mac (32 GB), ggml `07f9348a`, same
-refs and test clip, `stems-parity --device gpu`. CPU on the same machine matches the tables
-above (Kim full 74.4 dB, `htdemucs` 78.5–122.7 dB), so every gap below is Metal's.
+Measured 2026-10-02/03 on an Apple M4 Mac (32 GB), same refs and test clip, `stems-parity --device
+gpu`. The torch refs were dumped on the M4, and that machine's CPU build is the bar. It matches the
+tables above (Kim full 74.4 dB, `htdemucs` 78.5–122.7 dB). The exception is viperx: CPU gets 50.6 dB
+against ARM torch, versus 65.2 dB against the Windows/x86 refs.
+
+**At ggml `f30f0cdc`** (betweentwomidnights/ggml#11, every model passes):
+
+| model | worst stem, full | seg / full | 20 s clip |
+|---|---|---|---|
+| htdemucs | bass 70.7 | | 12.7 s |
+| htdemucs_6s | bass 74.3 | | 15.5 s |
+| htdemucs_ft | bass 67.1 | | |
+| mel_band_roformer_kim | | 61.5 / 74.4 (= M4 CPU) | about 28 s |
+| bs_roformer_viperx_317 | | 61.8 / 48.8 (M4 CPU 61.8 / 50.6) | about 76 s |
+
+#11 is the Metal counterpart of ggml#7. Before it, `kernel_mul_mm_f32_f32` staged both operands as
+`half` and ignored `GGML_PREC_F32`. #11 also cherry-picks an upstream fix for NORM/RMS_NORM rows
+that leave a partial simdgroup: the band-split RMS norms here are 132, 264, 396... wide, and were
+normalised with the wrong scale. Kim on Metal now matches the M4 CPU to the dB. viperx full sits
+1.8 dB under it, which is float32 accumulation over 12 layers; every op compares at float32 noise.
+It costs about 6–10% on the RoFormers and nothing on HTDemucs. The M4 GPU is about 1.7x its CPU on
+HTDemucs and about 8.5x on Kim.
+
+**At ggml `07f9348a`, before #11:**
 
 | model | check | drums | bass | other | vocals | guitar | piano | 20 s clip |
 |---|---|---|---|---|---|---|---|---|
@@ -167,12 +235,6 @@ above (Kim full 74.4 dB, `htdemucs` 78.5–122.7 dB), so every gap below is Meta
 |---|---|---|---|
 | mel_band_roformer_kim | 0.9999923 / 47.9 | 0.9999994 / 59.1 | 27.5 s |
 | bs_roformer_viperx_317 | 0.9999808 / 44.1 | 0.9999575 / 29.0 | 66.6 s |
-
-Metal's `kernel_mul_mm_f32_f32` stages both operands as `half` and ignores `GGML_PREC_F32`:
-the same fp16 rounding betweentwomidnights/ggml#7 removed from Vulkan, and the viperx numbers
-look like pre-#7 Vulkan. It needs the same fix in ggml's Metal backend. Until then, use CPU on
-a Mac when the stems must be exact. The M4 GPU is about 1.7x faster than its CPU on HTDemucs
-and about 8.5x on Kim (CPU: 21 s and 235 s).
 
 Before 2026-10-02 HTDemucs did not run on Metal at all, at any ggml pin:
 
