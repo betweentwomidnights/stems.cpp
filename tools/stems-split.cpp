@@ -1,7 +1,7 @@
 // stems-split — separate a WAV into stems.
 //
-//   stems-split --model models/htdemucs-f32.gguf --input song.wav --out stems/
-//   stems-split --model models/htdemucs-f32.gguf --input loop.wav --out stems/ --two-stems drums
+//   stems-split --model models/htdemucs-42M-v1.0-F32.gguf --input song.wav --out stems/
+//   stems-split --model models/htdemucs-42M-v1.0-F32.gguf --input loop.wav --out stems/ --two-stems drums
 //
 // Writes <out>/<source>.wav for each source (16-bit, rescaled only if it would clip, as
 // demucs does; --float32 for float WAVs). --two-stems X writes X.wav and no_X.wav, where

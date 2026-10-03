@@ -13,15 +13,18 @@ Every model matches its PyTorch reference **sample for sample**. For HTDemucs th
 per stem (float32 rounding). For the RoFormers it is the chunked `demix_track` the checkpoints
 were published with, at 62–73 dB on CPU and CUDA:
 
-| model | stems | params | GGUF |
-|---|---|---|---|
-| `htdemucs` | drums, bass, other, vocals | 42 M | 168 MB |
-| `htdemucs_6s` | + guitar, piano | 27 M | 110 MB |
-| `htdemucs_ft` | drums, bass, other, vocals (bag of 4 per-source fine-tunes, best quality, 4x the time) | 168 M | 672 MB |
-| `mel_band_roformer_kim` | vocals, instrumental ([Kim's Mel-Band RoFormer](https://huggingface.co/KimberleyJSN/melbandroformer), MIT) | 228 M | 913 MB (457 MB F16) |
+| model | stems | params | F32 / F16 | Hugging Face |
+|---|---|---|---|---|
+| `htdemucs` | drums, bass, other, vocals | 42 M | 160 / 100 MiB | [thepatch/htdemucs-GGUF](https://huggingface.co/thepatch/htdemucs-GGUF) |
+| `htdemucs_6s` | + guitar, piano | 27 M | 104 / 70 MiB | [thepatch/htdemucs-GGUF](https://huggingface.co/thepatch/htdemucs-GGUF) |
+| `htdemucs_ft` | drums, bass, other, vocals (bag of 4 per-source fine-tunes, best quality, 4x the time) | 4x42 M | 640 / 400 MiB | [thepatch/htdemucs-GGUF](https://huggingface.co/thepatch/htdemucs-GGUF) |
+| `mel_band_roformer_kim` | vocals, instrumental ([Kim's Mel-Band RoFormer](https://huggingface.co/KimberleyJSN/melbandroformer), MIT) | 228 M | 870 / 435 MiB | [thepatch/mel-band-roformer-kim-GGUF](https://huggingface.co/thepatch/mel-band-roformer-kim-GGUF) |
+| `bs_roformer_viperx_317` | vocals, instrumental (viperx's BS-RoFormer ep_317; **no upstream license**, see its card) | 160 M | 609 MiB, F32 only | [thepatch/bs-roformer-viperx-317-GGUF](https://huggingface.co/thepatch/bs-roformer-viperx-317-GGUF) |
 
-`bs_roformer` checkpoints (e.g. viperx's `ep_317`) convert and run too, with
-`tools/convert_roformer.py --arch bs_roformer`; none is published here yet.
+Files are named `<model>-<size>-v1.0-<F32|F16>.gguf`, e.g. `htdemucs-42M-v1.0-F32.gguf`.
+[docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) covers the naming, the repositories and the licenses.
+F32 is the reference. F16 is published where it was measured to hold up (each model card has the
+numbers).
 
 See [docs/PARITY.md](docs/PARITY.md) for the numbers and how to reproduce them.
 
@@ -31,14 +34,15 @@ See [docs/PARITY.md](docs/PARITY.md) for the numbers and how to reproduce them.
 git clone --recurse-submodules https://github.com/betweentwomidnights/stems.cpp.git
 cd stems.cpp
 ./build.sh cpu          # or: cuda | vulkan | metal | all   (windows: build.cmd cuda)
-./models.sh             # htdemucs; ./models.sh all for the other two
+./models.sh             # htdemucs (F32); ./models.sh all, or name models; --encoding f16
 ```
 
-Until the RoFormer GGUFs are published, convert Kim's yourself (downloads the checkpoint from HF):
+`models.sh` (Windows: `models.cmd`) downloads from Hugging Face with curl. To convert the
+checkpoints yourself instead (`pip install torch numpy pyyaml librosa gguf huggingface_hub demucs`):
 
 ```bash
-pip install torch numpy pyyaml librosa gguf huggingface_hub
-python tools/convert_roformer.py --preset kim models/mel_band_roformer_kim-f32.gguf   # --f16 for half the size
+python tools/convert_htdemucs.py htdemucs models/          # -> models/htdemucs-42M-v1.0-F32.gguf
+python tools/convert_roformer.py --preset kim models/      # downloads Kim's checkpoint; --f16 for half the size
 ```
 
 `build.sh` runs 4 compile jobs by default (`JOBS=8 ./build.sh cuda` to change it). An unbounded
@@ -48,10 +52,10 @@ Older nvcc with a newer gcc: `./build.sh cuda -DCMAKE_CUDA_HOST_COMPILER=g++-12`
 ## Run
 
 ```bash
-stems-split -m models/htdemucs-f32.gguf -i song.wav -o stems/                     # 4 stems
-stems-split -m models/htdemucs-f32.gguf -i loop.wav -o stems/ --two-stems drums   # drums + no_drums
-stems-split -m models/htdemucs_6s-f32.gguf -i song.wav -o stems/ --stems guitar,piano
-stems-split -m models/mel_band_roformer_kim-f32.gguf -i song.wav -o stems/       # vocals + instrumental
+stems-split -m models/htdemucs-42M-v1.0-F32.gguf -i song.wav -o stems/                     # 4 stems
+stems-split -m models/htdemucs-42M-v1.0-F32.gguf -i loop.wav -o stems/ --two-stems drums   # drums + no_drums
+stems-split -m models/htdemucs_6s-27M-v1.0-F32.gguf -i song.wav -o stems/ --stems guitar,piano
+stems-split -m models/mel_band_roformer_kim-0.2B-v1.0-F32.gguf -i song.wav -o stems/       # vocals + instrumental
 ```
 
 Any WAV works: 16/24/32-bit or float, any sample rate (band-limited resample to 44.1 kHz),
@@ -97,7 +101,7 @@ owns results and you free them with `result_free`. Progress and cancel are callb
 ```c
 const stems_api_v1* api = stems_get_api(STEMS_ABI_VERSION_1);
 stems_context_config_v1 cfg = {sizeof cfg}; api->context_config_init(&cfg);
-cfg.model_path = "models/htdemucs-f32.gguf";
+cfg.model_path = "models/htdemucs-42M-v1.0-F32.gguf";
 stems_context* ctx; stems_error_v1 err = {sizeof err};
 api->context_create(&cfg, &ctx, &err);
 

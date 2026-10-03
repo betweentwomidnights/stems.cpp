@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Convert a pretrained HTDemucs (v4) model to GGUF.
 
-    python tools/convert_htdemucs.py htdemucs      models/htdemucs-f32.gguf
-    python tools/convert_htdemucs.py htdemucs_6s   models/htdemucs_6s-f32.gguf
-    python tools/convert_htdemucs.py htdemucs_ft   models/htdemucs_ft-f32.gguf
+    python tools/convert_htdemucs.py htdemucs      models/    # -> models/htdemucs-42M-v1.0-F32.gguf
+    python tools/convert_htdemucs.py htdemucs_6s   models/    # -> htdemucs_6s-27M-v1.0-F32.gguf
+    python tools/convert_htdemucs.py htdemucs_ft   models/    # -> htdemucs_ft-4x42M-v1.0-F32.gguf
+
+Given a directory, the file gets its canonical name (docs/DISTRIBUTION.md); a file path is
+used as is.
 
 Needs `demucs` (and so torch) at conversion time only. The C++ side never touches Python.
 
@@ -22,11 +25,16 @@ Everything constant is folded here so the ggml graph is a plain composition of s
 """
 
 import argparse
+import os
 import sys
 from fractions import Fraction
+from pathlib import Path
 
 import numpy as np
 from gguf import GGUFWriter, GGMLQuantizationType
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gguf_meta  # noqa: E402
 
 ARCH = "htdemucs"
 
@@ -113,7 +121,7 @@ def convert_model(sd, prefix, add):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("name", help="demucs pretrained name: htdemucs, htdemucs_6s, htdemucs_ft")
-    ap.add_argument("out")
+    ap.add_argument("out", help="output file, or a directory to use the canonical file name")
     ap.add_argument("--f16", action="store_true",
                     help="store transformer matmul weights as F16 (convs stay F32)")
     args = ap.parse_args()
@@ -132,7 +140,7 @@ def main():
             raise SystemExit("bag members disagree on sources/samplerate/segment")
 
     seg = Fraction(ref.segment)
-    w = GGUFWriter(args.out, ARCH)
+    w = GGUFWriter(None, ARCH)   # the path depends on the parameter count, known at the end
     w.add_name(args.name)
     w.add_string("stems.model", args.name)
     w.add_array("stems.sources", list(ref.sources))
@@ -159,12 +167,26 @@ def main():
     for i, m in enumerate(models):
         convert_model(m.state_dict(), f"m{i}.", add)
 
-    w.write_header_to_file()
+    import demucs
+    remote = Path(demucs.__file__).parent / "remote"
+    files = {line.split("-")[0]: line.strip() for line in (remote / "files.txt").read_text().splitlines()
+             if line.strip() and not line.startswith("#")}
+    import yaml
+    sigs = yaml.safe_load((remote / f"{args.name}.yaml").read_text())["models"]
+    gguf_meta.add_general(w, args.name, n, "mit", n_models=len(models))
+    gguf_meta.add_source(w, args.name, "facebookresearch", "https://github.com/facebookresearch/demucs",
+                         f"demucs {demucs.__version__}", [files.get(s, s) for s in sigs])
+
+    out = args.out
+    if os.path.isdir(out):
+        label = gguf_meta.size_label(n, len(models))
+        out = os.path.join(out, gguf_meta.filename(args.name, label, "F16" if args.f16 else "F32"))
+    w.write_header_to_file(Path(out))
     w.write_kv_data_to_file()
     w.write_tensors_to_file()
     w.close()
     print(f"{args.name}: {len(models)} model(s), sources={ref.sources}, "
-          f"segment={seg} s, {n / 1e6:.1f}M params -> {args.out}", file=sys.stderr)
+          f"segment={seg} s, {n / 1e6:.1f}M params -> {out}", file=sys.stderr)
 
 
 if __name__ == "__main__":
