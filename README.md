@@ -22,7 +22,7 @@ See [docs/PARITY.md](docs/PARITY.md) for the numbers and how to reproduce them.
 ## Build
 
 ```bash
-git clone --recurse-submodules https://github.com/tinycrops/stems.cpp.git
+git clone --recurse-submodules https://github.com/betweentwomidnights/stems.cpp.git
 cd stems.cpp
 ./build.sh cpu          # or: cuda | vulkan | metal | all   (windows: build.cmd cuda)
 ./models.sh             # htdemucs; ./models.sh all for the other two
@@ -110,6 +110,13 @@ plain C. Its output is byte-identical to `stems-split --float32`.
   not with silence.
 - `tools/convert_htdemucs.py` converts the official checkpoints to GGUF. It needs `demucs` at
   conversion time only. `tools/dump_refs.py` and `stems-parity` are the parity harness.
+
+## Authors
+
+stems.cpp was written by [tinycrops](https://github.com/tinycrops), who did the port, the parity work
+and the C ABI. It is maintained by betweentwomidnights alongside sa3.cpp, audiocraft.cpp and yuey.cpp
+on the same ggml fork. tinycrops' original repo is at
+[github.com/tinycrops/stems.cpp](https://github.com/tinycrops/stems.cpp).
 
 ## Credits
 
