@@ -82,8 +82,8 @@ the sources. Run `stems-parity --wav` on whichever build you are about to use.
 
 ## Vulkan (RTX 5070 Laptop, coopmat2)
 
-Measured 2026-10-02, Vulkan SDK 1.4.350.0, same refs and test clip. Every stem of every model
-passes at cosine 1.0000000, and the numbers match the CPU table above:
+Measured 2026-10-02 with ggml `07f9348a`, Vulkan SDK 1.4.350.0, same refs and test clip. Every
+stem of every model passes at cosine 1.0000000, and the numbers match the CPU table above:
 
 | model | check | drums | bass | other | vocals | guitar | piano | 20 s clip |
 |---|---|---|---|---|---|---|---|---|
@@ -96,7 +96,7 @@ The same holds with `GGML_VK_DISABLE_COOPMAT2=1` (coopmat1), with both coopmat p
 
 ### fp16 operands in ggml-vulkan's F32 matmuls
 
-Before ggml `217f0f2d`, Vulkan failed parity on this card while CPU and CUDA passed:
+Before ggml `217f0f2d` (betweentwomidnights/ggml#7), Vulkan failed parity on this card while CPU and CUDA passed:
 
 | model | check | drums | bass | other | vocals | guitar | piano |
 |---|---|---|---|---|---|---|---|
@@ -118,3 +118,10 @@ coopmat switches restored parity.
 The fork now honours `GGML_PREC_F32` on contiguous F32 x F32 matmuls. It runs them on the
 fp32 build of the scalar shader, and every matmul in `htdemucs.cpp` already asks for that
 precision. On this card it costs no measurable time for HTDemucs.
+
+The pin, `07f9348a` (betweentwomidnights/ggml#10), is the commit shared by every consumer of
+the fork. Besides #7 it carries two Vulkan fixes HTDemucs does not depend on: #8 (the batch
+stride of a matmul over a strided view) and #9 (`PAD_REFLECT_1D`). #7 must not ship without
+#8. Before #7, coopmat2 copied every F32 input to a staging buffer, and that copy hid #8's
+bug; `GGML_PREC_F32` now skips the copy. The table above was re-measured at `07f9348a`, and
+it is identical to `217f0f2d` alone.
