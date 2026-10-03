@@ -9,6 +9,8 @@
 // DConv residuals share one code path. Transposed convolutions are a matmul followed by an
 // explicit overlap-add of the two stride-sized halves of each kernel (K == 2 * stride holds for
 // every HTDemucs layer), which keeps the graph on ops that every ggml backend implements.
+// Every matmul asks for GGML_PREC_F32. On Vulkan that is what keeps the operands out of fp16,
+// which costs the quiet stems 60 dB of SNR (docs/PARITY.md).
 #include "htdemucs.h"
 
 #include "gguf_model.h"
