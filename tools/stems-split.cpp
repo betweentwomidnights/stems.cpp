@@ -26,7 +26,8 @@ void usage() {
     fprintf(stderr,
         "usage: stems-split --model M.gguf --input IN.wav [--out DIR]\n"
         "                   [--two-stems SOURCE] [--stems a,b,...] [--shifts N] [--overlap F]\n"
-        "                   [--seed N] [--float32] [--device cpu|gpu] [--threads N]\n");
+        "                   [--seed N] [--float32] [--device cpu|gpu] [--threads N]\n"
+        "       stems-split --version\n");
 }
 
 void make_dir(const std::string& d) {
@@ -61,6 +62,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(a, "--float32")) f32 = true;
         else if (!strcmp(a, "--device")) device = next();
         else if (!strcmp(a, "--threads")) threads = std::stoi(next());
+        else if (!strcmp(a, "--version")) { puts(STEMS_VERSION_STRING); return 0; }
         else if (!strcmp(a, "-h") || !strcmp(a, "--help")) { usage(); return 0; }
         else { fprintf(stderr, "unknown argument %s\n", a); usage(); return 2; }
     }
