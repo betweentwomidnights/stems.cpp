@@ -1,7 +1,11 @@
 #include "gguf_model.h"
 
+#include <fstream>
 #include <mutex>
+#include <set>
 #include <string>
+#include <thread>
+#include <vector>
 
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
@@ -9,6 +13,9 @@
 #  include <windows.h>
 #else
 #  include <dlfcn.h>
+#endif
+#ifdef __APPLE__
+#  include <sys/sysctl.h>
 #endif
 
 namespace st {
@@ -47,7 +54,45 @@ std::string this_module_dir() {
 #endif
 }
 
+int physical_cores() {
+#if defined(__APPLE__)
+    // Performance cores on Apple Silicon (perflevel0); every physical core on Intel Macs.
+    for (const char* key : {"hw.perflevel0.physicalcpu", "hw.physicalcpu"}) {
+        int n = 0;
+        size_t size = sizeof(n);
+        if (sysctlbyname(key, &n, &size, nullptr, 0) == 0 && n > 0) return n;
+    }
+    return 0;
+#elif defined(_WIN32)
+    DWORD bytes = 0;
+    GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &bytes);
+    if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || bytes == 0) return 0;
+    std::vector<char> buf(bytes);
+    auto* info = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)buf.data();
+    if (!GetLogicalProcessorInformationEx(RelationProcessorCore, info, &bytes)) return 0;
+    int n = 0;
+    for (DWORD off = 0; off < bytes; n++)
+        off += ((SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)(buf.data() + off))->Size;
+    return n;
+#else
+    // One entry per core: the logical CPUs that share it list the same siblings.
+    std::set<std::string> cores;
+    const unsigned logical = std::thread::hardware_concurrency();
+    for (unsigned i = 0; i < logical; i++) {
+        std::ifstream f("/sys/devices/system/cpu/cpu" + std::to_string(i) + "/topology/thread_siblings_list");
+        std::string siblings;
+        if (f && std::getline(f, siblings)) cores.insert(siblings);
+    }
+    return cores.empty() ? (int)logical : (int)cores.size();
+#endif
+}
+
 } // namespace
+
+int default_cpu_threads() {
+    static const int n = physical_cores();
+    return n;
+}
 
 void load_dynamic_backends_once() {
     static std::once_flag once;
