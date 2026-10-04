@@ -32,10 +32,12 @@ option(STEMS_STATIC "Build libstems as a static library (for embedding in an app
 # By default ggml is linked statically into everything, including libstems.so/.dll, so a host
 # ships one file. A release package (ci/package-windows.ps1) instead builds ggml's backends as
 # runtime-loaded DLLs (GGML_BACKEND_DL), which ggml only allows with shared libraries: then
-# ggml.dll and ggml-base.dll sit beside stems.dll and a GPU backend is one more DLL in the same
-# folder. Either way needs position-independent objects throughout.
+# stems-ggml.dll and stems-ggml-base.dll sit beside stems.dll and a GPU backend is one more DLL
+# in the same folder. The stems- prefix (GGML_LIBRARY_PREFIX) keeps them from binding to another
+# plugin's ggml.dll in the same DAW process. Either way needs position-independent objects.
 if(GGML_BACKEND_DL)
     set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+    set(GGML_LIBRARY_PREFIX "stems-" CACHE STRING "prefix for ggml's shared library file names")
 else()
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 endif()
@@ -140,9 +142,7 @@ target_compile_definitions(stems PUBLIC STEMS_VERSION_STRING="${PROJECT_VERSION}
 # Only stems_get_api is exported. In the default build ggml is linked in statically and kept
 # private, so a host that also loads sa3 or audiocraft (each with its own ggml) cannot have
 # symbols cross over. A GGML_BACKEND_DL build (the release package) ships ggml as DLLs beside
-# stems.dll instead. Separate processes (gary4local's services) are unaffected, but inside one
-# process Windows binds an import of ggml.dll to any ggml.dll already loaded, whatever its
-# folder: a host must not load two engines' ggml.dll side by side.
+# stems.dll instead, named stems-ggml*.dll so they stay private in the same way (see above).
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(STEMS_STATIC ON CACHE BOOL "" FORCE)
 endif()

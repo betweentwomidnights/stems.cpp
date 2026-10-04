@@ -196,9 +196,9 @@ $coreDir = Stage "core" @(
     "stems-server.exe",
     "stems-split.exe",
     "stems.dll",
-    "ggml.dll",
-    "ggml-base.dll",
-    "ggml-cpu-*.dll"
+    "stems-ggml.dll",
+    "stems-ggml-base.dll",
+    "stems-ggml-cpu-*.dll"
 ) $bin
 Copy-Item (Join-Path $root "LICENSE") $coreDir
 Copy-Item (Join-Path $root "src\libstems_v1.h") $coreDir
@@ -229,11 +229,11 @@ if (-not $CpuOnly) { $buildInfo.backends = @("cuda", "vulkan") }
 # A GPU backend that landed in the core zip would load on every machine, and
 # one missing from its own zip would never load anywhere. Check both ways.
 foreach ($backend in "cuda", "vulkan") {
-    if (Test-Path (Join-Path $coreDir "ggml-$backend.dll")) { Fail "ggml-$backend.dll leaked into the core package" }
+    if (Test-Path (Join-Path $coreDir "stems-ggml-$backend.dll")) { Fail "stems-ggml-$backend.dll leaked into the core package" }
 }
 if (-not $CpuOnly) {
-    $cudaDir = Stage "cuda" @("ggml-cuda.dll") $bin
-    $vulkanDir = Stage "vulkan" @("ggml-vulkan.dll") $bin
+    $cudaDir = Stage "cuda" @("stems-ggml-cuda.dll") $bin
+    $vulkanDir = Stage "vulkan" @("stems-ggml-vulkan.dll") $bin
 
     $cudartDir = Stage "cudart" @(
         "cudart64_$cudaMajor.dll",

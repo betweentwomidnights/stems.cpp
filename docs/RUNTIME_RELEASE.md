@@ -10,8 +10,8 @@ runtime included. Model weights are downloaded separately from Hugging Face
 | Archive | Contents |
 |---|---|
 | `stems-<tag>-windows-x64-core.zip` | `stems.dll` and `libstems_v1.h`, `stems-server.exe`, `stems-split.exe`, ggml core and CPU variants, licenses, `BUILD-INFO.json`, and this document |
-| `stems-<tag>-windows-x64-cuda.zip` | `ggml-cuda.dll` for NVIDIA GPUs (needs the CUDA 12 runtime beside it or on `PATH`) |
-| `stems-<tag>-windows-x64-vulkan.zip` | `ggml-vulkan.dll` for AMD, Intel, or Vulkan-capable NVIDIA GPUs |
+| `stems-<tag>-windows-x64-cuda.zip` | `stems-ggml-cuda.dll` for NVIDIA GPUs (needs the CUDA 12 runtime beside it or on `PATH`) |
+| `stems-<tag>-windows-x64-vulkan.zip` | `stems-ggml-vulkan.dll` for AMD, Intel, or Vulkan-capable NVIDIA GPUs |
 | `stems-<tag>-windows-x64-standalone.zip` | Core, both GPU backends, CUDA runtime and EULA, `models.cmd`, and a startup guide; for direct use |
 
 The archives are flat at their root: unpack core, then one backend over it,
@@ -36,9 +36,9 @@ const stems_api_v1* api = ((const stems_api_v1* (*)(uint32_t))
                            GetProcAddress(m, "stems_get_api"))(STEMS_ABI_VERSION_1);
 ```
 
-`LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR` resolves `ggml.dll` and `ggml-base.dll` from
-the runtime folder. `stems.dll` then registers the ggml backends (the CPU
-variants and `ggml-vulkan.dll`) from its own folder, not from the DAW's
+`LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR` resolves `stems-ggml.dll` and
+`stems-ggml-base.dll` from the runtime folder. `stems.dll` then registers the ggml backends (the CPU
+variants and `stems-ggml-vulkan.dll`) from its own folder, not from the DAW's
 executable folder or working directory. `libstems_v1.h` documents the rest:
 `context_config.device` is NULL for the best GPU (most memory) with CPU
 fallback, or `"cpu"`;
@@ -46,12 +46,13 @@ a context is not reentrant; `separate()` blocks and calls the progress and
 cancel callbacks between segments, so run it on a worker thread.
 `runtime_version()` returns `stems.cpp <version> (libstems abi 1)`.
 
-One process, one `ggml.dll`: Windows binds `stems.dll`'s import of `ggml.dll`
-(and every backend's import of `ggml-base.dll`) to any module of that name
-already loaded, from whatever folder. A DAW that has already loaded another
-engine's `ggml.dll`, such as the sa3 plugins', hands stems that copy and its
-backend registry. With the same ggml pin across the gary repos that should
-work, but it is untested, and shared rather than isolated.
+Every ggml library is named `stems-ggml*.dll` (`GGML_LIBRARY_PREFIX`). Windows
+binds an import to any already-loaded DLL of the same name, from whatever
+folder, so with plain `ggml.dll` names a DAW that had already loaded another
+plugin's ggml (FoundationKeys 0.1.x ships `ggml.dll` and `ggml-base.dll`)
+would hand stems that older copy: measured, the stems then ran on
+FoundationKeys' `ggml-base.dll` and moved to 71 dB from a clean run. With the
+prefix the same session is bit-identical to running stems alone.
 
 ## Service: gary4local
 
