@@ -54,6 +54,33 @@ would hand stems that older copy: measured, the stems then ran on
 FoundationKeys' `ggml-base.dll` and moved to 71 dB from a clean run. With the
 prefix the same session is bit-identical to running stems alone.
 
+## macOS
+
+`stems-<tag>-macos-universal.zip` is a single archive for Apple Silicon and Intel
+Macs: `libstems.dylib` and `libstems_v1.h`, `stems-server`, `stems-split`, `models.sh`,
+licenses, and `BUILD-INFO.json`. `SHA256SUMS-macos` covers it, kept apart from the
+Windows `SHA256SUMS` so the two jobs never write one file.
+
+There are no backend archives and no ggml libraries. ggml is linked statically, so
+`libstems.dylib` holds ggml, the CPU backend (Accelerate) and the Metal backend with
+its shader source embedded, and exports only `stems_get_api`. Nothing in it can bind to
+another plugin's ggml. It links only system frameworks and runs on macOS 13.3 or later.
+
+Every binary is universal. The arm64 slice runs on the Metal GPU. The x86_64 slice is
+CPU only (ggml's Metal backend needs an Apple GPU) and needs AVX2, which every Intel Mac
+that runs macOS 13.3 has; expect HTDemucs at around half realtime there, and the
+RoFormers much slower. dyld picks the slice that matches the host process.
+
+```c
+void* lib = dlopen("/Users/.../stems/v0.1.0/libstems.dylib", RTLD_NOW | RTLD_LOCAL);
+const stems_api_v1* api = ((const stems_api_v1* (*)(uint32_t))
+                           dlsym(lib, "stems_get_api"))(STEMS_ABI_VERSION_1);
+```
+
+`context_config.device` NULL picks the Metal GPU on Apple Silicon and the CPU on Intel. The binaries are signed with a
+Developer ID and the hardened runtime, and the zip is notarized. A zip of bare
+binaries cannot be stapled, so Gatekeeper checks the notarization online.
+
 ## Service: gary4local
 
 `stems-server.exe` answers `--version` (the bare version) and `--props` (the
@@ -67,6 +94,26 @@ GPU, which `STEMS_GPU` can narrow by index or name). The server defaults to loop
 callers that expose it to a network must supply their own access controls.
 
 ## Build and publish
+
+On an Apple Silicon Mac with Xcode and CMake (macOS 15, so Rosetta can run the x86_64
+slice's checks):
+
+```bash
+ci/package-macos.sh --version v0.1.0 --check-model htdemucs-42M-v1.0-F16.gguf
+```
+
+It builds the arm64 (Metal) and x86_64 (CPU) slices in separate trees, runs CTest on
+both, joins them with lipo, and checks that each slice exports only `stems_get_api`,
+links only the system, and that Metal is in the arm64 slice alone. It signs when
+`STEMS_SIGN_IDENTITY` is set, separates a second of audio through the staged dylib
+from a folder outside the package, once from an arm64 process and once from an x86_64
+one under Rosetta, then zips and notarizes when the `STEMS_NOTARY_*` variables are set. In CI
+the Developer ID certificate and an App Store Connect API key come from the
+`MACOS_CERT_P12`, `MACOS_CERT_PASSWORD`, `APPLE_TEAM_ID`, `APPLE_NOTARY_KEY_P8`,
+`APPLE_NOTARY_KEY_ID` and `APPLE_NOTARY_ISSUER_ID` secrets; a tagged build without
+them fails. GitHub's macOS runners have a paravirtualized GPU that ggml's Metal backend
+does not run reliably on, so there the arm64 separation check runs on the CPU. Metal itself
+is validated on real hardware (docs/PARITY.md).
 
 On Windows with Visual Studio 2022, CUDA Toolkit 12.8, and Vulkan SDK:
 
@@ -99,6 +146,8 @@ the `--version`/`--props` contract, and model-file resolution.
 
 1. **Dry run:** dispatch `release.yml` with no tag, on the intended branch:
    `gh workflow run release.yml -R betweentwomidnights/stems.cpp --ref main`.
+   `-f platforms=macos` (or `windows`) builds one platform only; adding macOS to an
+   existing release is `-f tag=v0.1.0 -f platforms=macos`.
    CI builds the full portable package and retains the four zips plus
    `SHA256SUMS` as a workflow artifact for 14 days. It creates no release.
 2. **Install test:** download that artifact and check `SHA256SUMS`. Unpack

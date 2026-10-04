@@ -93,6 +93,12 @@ inline int cpu_threads_from_env() {
 // Defined in backend_loader.cpp so <windows.h> stays out of this header.
 void load_dynamic_backends_once();
 
+// CPU threads when neither the caller nor STEMS_THREADS sets them: one per physical core,
+// the performance cores on Apple Silicon. Hyperthreads add nothing to these models' matmuls
+// (i7-9750H, htdemucs, 20 s: 4 threads 53 s, 6 threads 45 s, 12 threads 48 s), and ggml's own
+// default is a fixed 4. 0 if the core count cannot be read, which leaves ggml's default.
+int default_cpu_threads();
+
 inline void configure_cpu_threads(ggml_backend_t b, int n_threads) {
     if (!b || n_threads <= 0) return;
     ggml_backend_dev_t dev = ggml_backend_get_device(b);
@@ -217,7 +223,9 @@ inline ggml_backend_t make_backend(int cpu_threads = 0, const char* device = nul
     }
     ggml_backend_t b = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
     if (b) {
-        configure_cpu_threads(b, cpu_threads > 0 ? cpu_threads : cpu_threads_from_env());
+        int n = cpu_threads > 0 ? cpu_threads : cpu_threads_from_env();
+        if (n <= 0) n = default_cpu_threads();
+        configure_cpu_threads(b, n);
         ggml_backend_dev_t d = ggml_backend_get_device(b);
         if (d) {
             fprintf(stderr, "[stems] backend: %s (%s)\n",
