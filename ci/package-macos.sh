@@ -108,7 +108,9 @@ echo "stems.cpp  $(git rev-parse --short HEAD)"
 echo "ggml       $(git -C ggml rev-parse HEAD)"
 echo "version    $VERSION"
 echo "macOS      $(sw_vers -productVersion), deployment target $DEPLOYMENT_TARGET"
-echo "xcode      $(xcodebuild -version | head -1)"
+# sed reads all of xcodebuild's output: with head, xcodebuild crashes on the closed pipe.
+XCODE="$(xcodebuild -version 2>/dev/null | sed -n 1p)"
+echo "xcode      $XCODE"
 echo "signing    $([ "$SIGN" = 1 ] && echo "Developer ID" || echo "ad-hoc (local check only)")"
 echo "notarize   $([ "$NOTARIZE" = 1 ] && echo yes || echo no)"
 echo "rosetta    $([ "$ROSETTA" = 1 ] && echo "yes: the x86_64 slice is tested" || echo "no: the x86_64 slice is built but not run")"
@@ -185,7 +187,7 @@ cat > "$STAGE/BUILD-INFO.json" <<EOF
   "architectures": {"arm64": ["metal", "cpu"], "x86_64": ["cpu"]},
   "x86_64_baseline": "avx2",
   "macos_deployment_target": "$DEPLOYMENT_TARGET",
-  "xcode": "$(xcodebuild -version | head -1)",
+  "xcode": "$XCODE",
   "signed": $([ "$SIGN" = 1 ] && echo true || echo false),
   "built_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
