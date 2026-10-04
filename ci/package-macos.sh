@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# ABOUTME: Builds the macOS arm64 package: one self-contained libstems.dylib with Metal,
-# ABOUTME: stems-server and stems-split, signed and notarized when credentials are given.
+# ABOUTME: Builds the macOS package: a universal libstems.dylib (Metal on Apple Silicon, CPU on
+# ABOUTME: Intel), stems-server and stems-split, signed and notarized when credentials are given.
 #
 # The macOS counterpart of ci/package-windows.ps1, and the same package contract
 # (gary-localhost-installer docs/native-runtime-packages.md), with one difference:
@@ -8,6 +8,12 @@
 # build), so libstems.dylib carries ggml, the CPU backend and the Metal backend with its
 # shader source embedded, and exports only stems_get_api. There are no ggml dylibs for
 # another plugin's copy to collide with, and nothing to unpack beside it.
+#
+# Every binary is universal. The arm64 slice has Metal; the x86_64 slice is CPU only
+# (ggml's Metal backend needs Apple GPUs) with ggml's portable x86 baseline, AVX2/FMA/F16C,
+# which every Intel Mac that runs macOS 13.3 has. The slices are built in separate trees
+# and joined with lipo: ggml picks its CPU flags per target, so one two-arch build would
+# hand the x86 compile ARM flags.
 #
 # gary4juce downloads the zip and dlopens libstems.dylib from the unpacked folder. The
 # script checks exactly that before zipping, from a folder outside the package, then
@@ -26,9 +32,11 @@
 #   ci/package-macos.sh --version v0.1.0 [--build-dir build-dist-macos] [--out-dir dist]
 #                       [--check-model PATH.gguf] [--skip-tests] [--require-signing] [--jobs N]
 #
-# --check-model also separates a second of audio through the staged libstems.dylib. It
-# runs on the Metal GPU, except on a paravirtualized one (GitHub's macOS runners), where
-# ggml's Metal backend is not reliable and the check runs on the CPU instead.
+# --check-model also separates a second of audio through the staged libstems.dylib, once
+# per slice. The arm64 run uses the Metal GPU, except on a paravirtualized one (GitHub's
+# macOS runners), where ggml's Metal backend is not reliable and it runs on the CPU. The
+# x86_64 slice runs under Rosetta, whose AVX2 support needs macOS 15; without Rosetta that
+# half of the check is skipped, and says so.
 set -euo pipefail
 
 VERSION=""
@@ -51,7 +59,7 @@ while [ $# -gt 0 ]; do
     --skip-tests) SKIP_TESTS=1 ;;
     --require-signing) REQUIRE_SIGNING=1 ;;
     --jobs) JOBS="$2"; shift ;;
-    -h|--help) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) fail "unknown option: $1" ;;
   esac
   shift
@@ -62,7 +70,7 @@ cd "$ROOT"
 
 [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "--version must look like v0.1.0"
 [ "$(uname -s)" = Darwin ] || fail "this script builds the macOS package; run it on a Mac"
-[ "$(uname -m)" = arm64 ] || fail "build on Apple Silicon: the package is arm64"
+[ "$(uname -m)" = arm64 ] || fail "build on Apple Silicon: only there can the Metal slice be checked"
 [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || fail "--jobs must be positive"
 
 # The script clears its staging and output folders, so keep both inside this checkout.
@@ -93,6 +101,8 @@ if [ "$NOTARIZE" = 1 ] && [ "$SIGN" = 0 ]; then fail "notarizing needs STEMS_SIG
 
 command -v cmake >/dev/null || fail "cmake is not on PATH"
 CTEST="$(dirname "$(command -v cmake)")/ctest"
+ROSETTA=0
+if arch -x86_64 /usr/bin/true 2>/dev/null; then ROSETTA=1; fi
 
 echo "stems.cpp  $(git rev-parse --short HEAD)"
 echo "ggml       $(git -C ggml rev-parse HEAD)"
@@ -101,30 +111,46 @@ echo "macOS      $(sw_vers -productVersion), deployment target $DEPLOYMENT_TARGE
 echo "xcode      $(xcodebuild -version | head -1)"
 echo "signing    $([ "$SIGN" = 1 ] && echo "Developer ID" || echo "ad-hoc (local check only)")"
 echo "notarize   $([ "$NOTARIZE" = 1 ] && echo yes || echo no)"
+echo "rosetta    $([ "$ROSETTA" = 1 ] && echo "yes: the x86_64 slice is tested" || echo "no: the x86_64 slice is built but not run")"
 
 # --- build ------------------------------------------------------------------
 
-cmake -S . -B "$BUILD_PATH" \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_OSX_ARCHITECTURES=arm64 \
-  -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" \
-  -DGGML_NATIVE=OFF \
-  -DGGML_BACKEND_DL=OFF \
-  -DSTEMS_METAL=ON \
-  -DSTEMS_CUDA=OFF \
-  -DSTEMS_VULKAN=OFF \
-  -DSTEMS_BUILD_TOOLS=ON \
-  -DBUILD_TESTING=ON
-cmake --build "$BUILD_PATH" --config Release --parallel "$JOBS"
+# ggml enables Metal on every Apple build unless told otherwise, so the x86_64 tree says so.
+build_slice() {   # arch, metal ON|OFF
+  cmake -S . -B "$BUILD_PATH/$1" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_OSX_ARCHITECTURES="$1" \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" \
+    -DGGML_NATIVE=OFF \
+    -DGGML_BACKEND_DL=OFF \
+    -DGGML_METAL="$2" \
+    -DSTEMS_METAL="$2" \
+    -DSTEMS_CUDA=OFF \
+    -DSTEMS_VULKAN=OFF \
+    -DSTEMS_BUILD_TOOLS=ON \
+    -DBUILD_TESTING=ON
+  cmake --build "$BUILD_PATH/$1" --config Release --parallel "$JOBS"
+}
+build_slice arm64 ON
+build_slice x86_64 OFF
+
+ARM="$BUILD_PATH/arm64/bin"
+X86="$BUILD_PATH/x86_64/bin"
 
 if [ "$SKIP_TESTS" = 0 ]; then
-  "$CTEST" --test-dir "$BUILD_PATH" -C Release --output-on-failure
+  "$CTEST" --test-dir "$BUILD_PATH/arm64" -C Release --output-on-failure
+  # macOS runs the x86_64 test binaries under Rosetta by itself.
+  if [ "$ROSETTA" = 1 ]; then
+    "$CTEST" --test-dir "$BUILD_PATH/x86_64" -C Release --output-on-failure
+  fi
 fi
 
-BIN="$BUILD_PATH/bin"
 for tool in stems-server stems-split; do
-  reported="$("$BIN/$tool" --version 2>/dev/null)" || fail "$tool --version failed"
-  [ "v$reported" = "$VERSION" ] || fail "$tool reports $reported but the package is $VERSION; update project(VERSION) in CMakeLists.txt"
+  for dir in "$ARM" "$X86"; do
+    [ "$dir" = "$X86" ] && [ "$ROSETTA" = 0 ] && continue
+    reported="$("$dir/$tool" --version 2>/dev/null)" || fail "$dir/$tool --version failed"
+    [ "v$reported" = "$VERSION" ] || fail "$tool reports $reported but the package is $VERSION; update project(VERSION) in CMakeLists.txt"
+  done
 done
 
 # --- stage ------------------------------------------------------------------
@@ -133,7 +159,9 @@ STAGE="$BUILD_PATH/package/macos"
 rm -rf "$BUILD_PATH/package"
 mkdir -p "$STAGE"
 
-cp "$BIN/libstems.dylib" "$BIN/stems-server" "$BIN/stems-split" "$STAGE/"
+for f in libstems.dylib stems-server stems-split; do
+  lipo -create "$ARM/$f" "$X86/$f" -output "$STAGE/$f"
+done
 cp LICENSE "$STAGE/"
 cp src/libstems_v1.h "$STAGE/"
 cp models.sh "$STAGE/"
@@ -153,8 +181,9 @@ cat > "$STAGE/BUILD-INFO.json" <<EOF
   "commit": "$(git rev-parse HEAD)",
   "dirty": $DIRTY,
   "ggml_commit": "$(git -C ggml rev-parse HEAD)",
-  "platform": "macos-arm64",
-  "backends": ["metal"],
+  "platform": "macos-universal",
+  "architectures": {"arm64": ["metal", "cpu"], "x86_64": ["cpu"]},
+  "x86_64_baseline": "avx2",
   "macos_deployment_target": "$DEPLOYMENT_TARGET",
   "xcode": "$(xcodebuild -version | head -1)",
   "signed": $([ "$SIGN" = 1 ] && echo true || echo false),
@@ -162,15 +191,23 @@ cat > "$STAGE/BUILD-INFO.json" <<EOF
 }
 EOF
 
-# The dylib must be self-contained: one exported symbol, and nothing linked but the
+# Each slice must be self-contained: one exported symbol, and nothing linked but the
 # system. A stray @rpath dependency would work here and fail on a user's machine.
-exports="$(nm -gU "$STAGE/libstems.dylib" | awk '{print $NF}')"
-[ "$exports" = "_stems_get_api" ] || fail "libstems.dylib exports more than _stems_get_api: $exports"
-for f in libstems.dylib stems-server stems-split; do
-  lipo -archs "$STAGE/$f" | grep -qx arm64 || fail "$f is not arm64-only: $(lipo -archs "$STAGE/$f")"
-  deps="$(otool -L "$STAGE/$f" | tail -n +2 | awk '{print $1}' | grep -v -e '^/usr/lib/' -e '^/System/Library/' -e '^@rpath/libstems.dylib$' || true)"
-  [ -z "$deps" ] || fail "$f links outside the system: $deps"
+for a in arm64 x86_64; do
+  exports="$(nm -gU -arch "$a" "$STAGE/libstems.dylib" | awk '{print $NF}')"
+  [ "$exports" = "_stems_get_api" ] || fail "libstems.dylib ($a) exports more than _stems_get_api: $exports"
+  for f in libstems.dylib stems-server stems-split; do
+    deps="$(otool -arch "$a" -L "$STAGE/$f" | tail -n +2 | awk '{print $1}' | grep -v -e '^/usr/lib/' -e '^/System/Library/' -e '^@rpath/libstems.dylib$' || true)"
+    [ -z "$deps" ] || fail "$f ($a) links outside the system: $deps"
+  done
 done
+for f in libstems.dylib stems-server stems-split; do
+  archs="$(lipo -archs "$STAGE/$f" | tr ' ' '\n' | sort | tr '\n' ' ')"
+  [ "$archs" = "arm64 x86_64 " ] || fail "$f is not arm64 + x86_64: $archs"
+done
+# Metal belongs to the arm64 slice only: an Intel Mac must never pick a Metal device.
+otool -arch x86_64 -L "$STAGE/libstems.dylib" | grep -q Metal.framework && fail "the x86_64 slice links Metal"
+otool -arch arm64 -L "$STAGE/libstems.dylib" | grep -q Metal.framework || fail "the arm64 slice does not link Metal"
 
 # --- sign -------------------------------------------------------------------
 #
@@ -195,7 +232,8 @@ fi
 
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/stems-package-check.XXXXXX")"
 trap 'rm -rf "$SCRATCH"' EXIT
-cp "$BIN/stems-abi-test" "$SCRATCH/"
+cp "$ARM/stems-abi-test" "$SCRATCH/stems-abi-test"
+cp "$X86/stems-abi-test" "$SCRATCH/stems-abi-test-x86_64"
 (
   cd "$SCRATCH"
   reported="$("$STAGE/stems-server" --version 2>/dev/null)"
@@ -212,6 +250,20 @@ cp "$BIN/stems-abi-test" "$SCRATCH/"
   else
     ./stems-abi-test "$STAGE/libstems.dylib" "${VERSION#v}" 2>/dev/null
   fi
+  unset STEMS_DEVICE
+  # The same universal dylib from an x86_64 host process: dyld takes its x86_64 slice,
+  # which has only the CPU backend.
+  if [ "$ROSETTA" = 1 ]; then
+    echo "x86_64 slice, under Rosetta:"
+    [ "v$(arch -x86_64 "$STAGE/stems-server" --version 2>/dev/null)" = "$VERSION" ] || fail "x86_64 stems-server --version"
+    if [ -n "$CHECK_MODEL" ]; then
+      ./stems-abi-test-x86_64 "$STAGE/libstems.dylib" "${VERSION#v}" "$CHECK_MODEL" 2>/dev/null
+    else
+      ./stems-abi-test-x86_64 "$STAGE/libstems.dylib" "${VERSION#v}" 2>/dev/null
+    fi
+  else
+    echo "no Rosetta: the x86_64 slice was not run"
+  fi
 )
 echo "staged package checked from outside its folder"
 
@@ -221,12 +273,12 @@ mkdir -p "$OUT_PATH"
 for f in "$OUT_PATH"/*; do
   [ -e "$f" ] || continue
   case "$(basename "$f")" in
-    stems-v*-macos-arm64.zip|SHA256SUMS-macos) rm -f "$f" ;;
+    stems-v*-macos-universal.zip|SHA256SUMS-macos) rm -f "$f" ;;
     *) fail "$OUT_PATH holds files that are not macOS package outputs: $(basename "$f")" ;;
   esac
 done
 
-ZIP_NAME="stems-$VERSION-macos-arm64.zip"
+ZIP_NAME="stems-$VERSION-macos-universal.zip"
 ZIP="$OUT_PATH/$ZIP_NAME"
 # Flat at the root, like the Windows zips. ditto keeps the signatures and modes intact.
 ditto -c -k --norsrc "$STAGE" "$ZIP"
