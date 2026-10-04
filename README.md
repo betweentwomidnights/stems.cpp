@@ -49,6 +49,14 @@ python tools/convert_roformer.py --preset kim models/      # downloads Kim's che
 `-j` on ggml's CUDA kernels used up 32 GB and took the build machine down.
 Older nvcc with a newer gcc: `./build.sh cuda -DCMAKE_CUDA_HOST_COMPILER=g++-12`.
 
+`ctest --test-dir build -C Release` runs the model-free tests: DSP round trips, the C ABI as a
+host loads it, the `--version`/`--props` contract, and model-file resolution. The PyTorch parity
+checks need references and are in [docs/PARITY.md](docs/PARITY.md).
+
+Prebuilt Windows runtimes (core, CUDA, Vulkan, standalone) are attached to each
+[GitHub release](https://github.com/betweentwomidnights/stems.cpp/releases);
+[docs/RUNTIME_RELEASE.md](docs/RUNTIME_RELEASE.md) covers the packages and how they are built.
+
 ## Run
 
 ```bash
@@ -77,6 +85,7 @@ stems-server --port 8010 --models-dir models
 
 ```
 GET  /health
+GET  /props                      version, ggml devices, the file each model name resolves to
 GET  /api/models
 POST /separate                   JSON in, {success, model, sample_rate, stems: {name: b64 wav}}
 POST /api/juce/separate_audio    -> {success, session_id}
@@ -84,10 +93,11 @@ GET  /api/juce/poll_status/<id>  -> {status, progress, separation_in_progress, s
 ```
 
 Request: `audio_data` (base64 WAV) and optionally `model` (`htdemucs` | `htdemucs_6s` |
-`htdemucs_ft` | `mel_band_roformer_kim`), `two_stems`, `stems` (list), `shifts`, `overlap`, `seed`, `float32`. The session
+`htdemucs_ft` | `mel_band_roformer_kim` | `bs_roformer_viperx_317`), `two_stems`, `stems` (list), `shifts`, `overlap`, `seed`, `float32`. The session
 and poll shape is audiocraft.cpp's, so gary4juce can reuse the client code it already has for
 terry. One job at a time. The model stays resident between requests and swaps when a different
-one is asked for.
+one is asked for. `stems-server --version` and `--props` answer without binding a port or loading
+a model; `STEMS_PORT`, `STEMS_HOST`, `STEMS_MODELS_DIR` and `STEMS_DEVICE` set the defaults.
 
 ## C ABI (libstems)
 
@@ -115,10 +125,13 @@ api->context_destroy(ctx);
 ```
 
 Input can be any rate, any channel count, planar or interleaved. Stems come back at the input's
-sample rate and exact length, so a host never resamples. ggml is linked in statically and kept
-private: `stems_get_api` is the only exported symbol, so a plugin can load libstems next to
-libsa3 without their ggml copies colliding. `tools/stems-libtest.c` is a complete example in
-plain C. Its output is byte-identical to `stems-split --float32`.
+sample rate and exact length, so a host never resamples. In a default build ggml is linked in
+statically and kept private: `stems_get_api` is the only exported symbol, so a plugin can load
+libstems next to libsa3 without their ggml copies colliding. The release packages instead ship
+ggml and its backends as DLLs beside `stems.dll`, which loads its backends from its own folder;
+see [docs/RUNTIME_RELEASE.md](docs/RUNTIME_RELEASE.md) for loading it from a plugin.
+`tools/stems-libtest.c` is a complete example in plain C. Its output is byte-identical to
+`stems-split --float32`.
 
 ## How it's put together
 
