@@ -360,7 +360,10 @@ inline GgufModel load_gguf(const char* path, ggml_backend_t backend = nullptr) {
     m.gguf = gguf_init_from_file(path, gp);
     if (!m.gguf) throw gguf_error("failed to open " + std::string(path));
 
-    std::unique_ptr<FILE, int(*)(FILE*)> f(fopen(path, "rb"), fclose);
+    // ggml_fopen, not fopen: paths are UTF-8 (a host passes juce::File::toRawUTF8()), and on Windows
+    // fopen reads them in the ANSI codepage, so a model under C:\Users\José\... opened its metadata
+    // through gguf_init_from_file (which uses ggml_fopen) and then failed here.
+    std::unique_ptr<FILE, int(*)(FILE*)> f(ggml_fopen(path, "rb"), fclose);
     if (!f) throw gguf_error("cannot read " + std::string(path));
     const uint64_t data_off = (uint64_t)gguf_get_data_offset(m.gguf);
     uint64_t file_size = 0;

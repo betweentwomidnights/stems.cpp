@@ -197,11 +197,14 @@ if(STEMS_BUILD_TOOLS)
     #   dsp:      FFT/STFT/iSTFT round trips, WAV bytes, resampling (the host-side signal path);
     #   abi:      the libstems V1 table, initializers and argument errors, as a C host sees them;
     #   contract: stems-server --version / --props, which gary4local reads before any model;
-    #   resolve:  stems-server picks the model file it should from a models directory.
+    #   resolve:  stems-server picks the model file it should from a models directory;
+    #   utf8:     a GGUF in a folder with a non-ASCII name loads (hosts pass UTF-8 paths).
     # stems-abi-test loads the library at run time like a plugin and also takes a model, which
     # ci/package-windows.ps1 uses to check a staged package from outside its folder.
     add_executable(stems-dsp-test tests/dsp_test.cpp)
     target_link_libraries(stems-dsp-test PRIVATE stems)
+    add_executable(stems-utf8-path-test tests/utf8_path_test.cpp)
+    target_link_libraries(stems-utf8-path-test PRIVATE stems)
     if(NOT STEMS_STATIC)
         add_executable(stems-abi-test tests/abi_test.c)
         target_include_directories(stems-abi-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -210,6 +213,7 @@ if(STEMS_BUILD_TOOLS)
     endif()
     if(BUILD_TESTING)
         add_test(NAME stems-dsp-test COMMAND stems-dsp-test)
+        add_test(NAME stems-utf8-path-test COMMAND stems-utf8-path-test "${CMAKE_CURRENT_BINARY_DIR}")
         if(NOT STEMS_STATIC)
             add_test(NAME stems-abi-test
                      COMMAND stems-abi-test "$<TARGET_FILE:stems_shared>" "${PROJECT_VERSION}")
