@@ -84,13 +84,14 @@ inline int cpu_threads_from_env() {
     return (int)n;
 }
 
-inline void load_dynamic_backends_once() {
-    static bool loaded = false;
-    if (!loaded) {
-        ggml_backend_load_all();
-        loaded = true;
-    }
-}
+// Registers ggml's runtime-loaded backends (a GGML_BACKEND_DL build: ggml-cpu-*.dll,
+// ggml-vulkan.dll, ...) from the folder of the module this code is linked into, falling back
+// to ggml's defaults (the executable's folder, the working directory) if that finds none. The
+// module folder is what matters for libstems in a plugin: the executable there is the DAW,
+// and the backends sit beside stems.dll in the runtime folder. A build with the backends
+// linked in already has its devices, so this registers nothing more.
+// Defined in backend_loader.cpp so <windows.h> stays out of this header.
+void load_dynamic_backends_once();
 
 inline void configure_cpu_threads(ggml_backend_t b, int n_threads) {
     if (!b || n_threads <= 0) return;

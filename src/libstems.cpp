@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-#define STEMS_RUNTIME_VERSION "stems.cpp 0.1.0 (libstems abi 1)"
+#define STEMS_RUNTIME_VERSION "stems.cpp " STEMS_VERSION_STRING " (libstems abi 1)"
 
 struct stems_context {
     std::unique_ptr<st::Separator> model;

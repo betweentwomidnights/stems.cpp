@@ -4,21 +4,27 @@
 // in and out) so gary4juce can drive it with the client code it already has for terry:
 //
 //   GET  /health
+//   GET  /props                           version, ggml devices, the file each model resolves to
 //   GET  /api/models                      the GGUFs in --models-dir and their sources
 //   POST /separate                        JSON in, JSON out with every stem, synchronous
 //   POST /api/juce/separate_audio         -> {success, session_id}, runs in background
 //   GET  /api/juce/poll_status/<id>       -> progress, then {stems: {name: b64 wav}}
 //
 // Request fields: audio_data (base64 WAV, any rate/channel count), and optionally
-// model ("htdemucs", "htdemucs_6s", "htdemucs_ft", "mel_band_roformer_kim"; default
-// htdemucs), two_stems (a source name: returns it and no_<name>), stems (array of source
+// model ("htdemucs", "htdemucs_6s", "htdemucs_ft", "mel_band_roformer_kim",
+// "bs_roformer_viperx_317"; default htdemucs), two_stems (a source name: returns it and no_<name>), stems (array of source
 // names to return), shifts, overlap (default: the model's own), seed, float32 (return float
 // WAVs instead of 16-bit).
+//
+// `stems-server --version` prints the bare version and `--props` the /props JSON, neither
+// binding a port nor loading a model (the gary4local runtime contract). Environment:
+// STEMS_PORT, STEMS_HOST, STEMS_MODELS_DIR, STEMS_DEVICE; flags override them.
 //
 // The model stays resident between requests: HTDemucs is 168 MB of weights and Kim's RoFormer
 // 913 MB, and loading is most of the latency on a short loop. Asking for a different model
 // swaps it.
 #include "audio.h"
+#include "runtime_props.h"
 #include "separator.h"
 #include "serve/http.h"
 
@@ -117,6 +123,31 @@ std::string find_model(const std::string& name) {
         if (file_exists(path)) return path;
     }
     return {};
+}
+
+// Every model name the server knows, with its sources, in /api/models order.
+const std::vector<std::pair<const char*, const char*>> kKnownModels = {
+    {"htdemucs", R"(["drums","bass","other","vocals"])"},
+    {"htdemucs_ft", R"(["drums","bass","other","vocals"])"},
+    {"htdemucs_6s", R"(["drums","bass","other","vocals","guitar","piano"])"},
+    {"mel_band_roformer_kim", R"(["vocals","instrumental"])"},
+    {"bs_roformer_viperx_317", R"(["vocals","instrumental"])"},
+};
+
+// The /props fields beyond the shared runtime ones: the models directory and the file each
+// known model resolves to (null when it is not installed), so a host can show what is ready.
+std::string models_props() {
+    std::string out = ",\"models\":{\"directory\":" + json_string(g_models_dir) + ",\"resolved\":{";
+    bool first = true;
+    for (const auto& m : kKnownModels) {
+        const std::string path = find_model(m.first);
+        if (!first) out += ',';
+        first = false;
+        out += json_string(m.first) + ":";
+        const size_t slash = path.find_last_of("/\\");
+        out += path.empty() ? "null" : json_string(slash == std::string::npos ? path : path.substr(slash + 1));
+    }
+    return out + "}}";
 }
 
 struct Json {
@@ -241,6 +272,8 @@ std::string run_separate(SeparateRequest req, const std::string& session) {
 void usage() {
     fprintf(stderr,
         "usage: stems-server [--port 8010] [--host 127.0.0.1] [--models-dir DIR] [--device NAME]\n"
+        "       stems-server --version\n"
+        "       stems-server --props [--models-dir DIR]\n"
         "\n"
         "Stem separation over HTTP. Models are found in --models-dir (or\n"
         "STEMS_MODELS_DIR) by name: <name>-<size>-v<version>-F16.gguf or -F32.gguf, as\n"
@@ -251,8 +284,9 @@ void usage() {
 } // namespace
 
 int main(int argc, char** argv) {
-    int port = 8010;
-    std::string host = "127.0.0.1";
+    int port = atoi(env_or("STEMS_PORT", "8010").c_str());
+    std::string host = env_or("STEMS_HOST", "127.0.0.1");
+    bool print_props = false;
     g_models_dir = env_or("STEMS_MODELS_DIR", "models");
     g_device = env_or("STEMS_DEVICE", "");
     for (int i = 1; i < argc; ++i) {
@@ -265,8 +299,18 @@ int main(int argc, char** argv) {
         else if (a == "--host") host = next("--host");
         else if (a == "--models-dir") g_models_dir = next("--models-dir");
         else if (a == "--device") g_device = next("--device");
+        else if (a == "--version") { puts(st::runtime_version()); return 0; }
+        else if (a == "--props") print_props = true;
         else if (a == "-h" || a == "--help") { usage(); return 0; }
         else { fprintf(stderr, "error: unknown argument '%s'\n", a.c_str()); usage(); return 2; }
+    }
+    if (print_props) {
+        puts(st::runtime_props_json("stems", models_props()).c_str());
+        return 0;
+    }
+    if (port <= 0 || port > 65535) {
+        fprintf(stderr, "error: invalid port %d\n", port);
+        return 2;
     }
     if (list_ggufs().empty())
         fprintf(stderr, "[stems] warning: no .gguf in %s (run models.sh)\n", g_models_dir.c_str());
@@ -280,12 +324,17 @@ int main(int argc, char** argv) {
         res.set_content(JsonObject()
                             .str("status", ready ? "healthy" : "degraded")
                             .str("service", "stems-localhost")
+                            .str("version", st::runtime_version())
                             .boolean("model_loaded", (bool)g_model)
                             .str("models_dir", g_models_dir)
                             .str("device", g_device.empty() ? "auto" : g_device)
                             .str("backend", "stems.cpp")
                             .str(),
                         "application/json");
+    });
+
+    server.Get("/props", [](const httplib::Request&, httplib::Response& res) {
+        res.set_content(st::runtime_props_json("stems", models_props()), "application/json");
     });
 
     server.Get("/api/models", [](const httplib::Request&, httplib::Response& res) {
@@ -296,10 +345,14 @@ int main(int argc, char** argv) {
             first = false;
             body += json_string(f);
         }
-        body += "],\"known\":{\"htdemucs\":[\"drums\",\"bass\",\"other\",\"vocals\"],"
-                "\"htdemucs_ft\":[\"drums\",\"bass\",\"other\",\"vocals\"],"
-                "\"htdemucs_6s\":[\"drums\",\"bass\",\"other\",\"vocals\",\"guitar\",\"piano\"],"
-                "\"mel_band_roformer_kim\":[\"vocals\",\"instrumental\"]}}";
+        body += "],\"known\":{";
+        first = true;
+        for (const auto& m : kKnownModels) {
+            if (!first) body += ',';
+            first = false;
+            body += json_string(m.first) + ":" + m.second;
+        }
+        body += "}}";
         res.set_content(body, "application/json");
     });
 
