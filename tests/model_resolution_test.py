@@ -56,6 +56,10 @@ case("malformed names are ignored", ["htdemucs-42M-F32.gguf", "htdemucs-42M-1.0-
      {"htdemucs": None})
 case("viperx (F32 only)", ["bs_roformer_viperx_317-0.2B-v1.0-F32.gguf"],
      {"bs_roformer_viperx_317": "bs_roformer_viperx_317-0.2B-v1.0-F32.gguf"})
+case("VR full and Lite resolve independently",
+     ["uvr_denoise-32M-v1.0-F32.gguf", "uvr_denoise_lite-4M-v1.0-F32.gguf"],
+     {"uvr_denoise": "uvr_denoise-32M-v1.0-F32.gguf",
+      "uvr_denoise_lite": "uvr_denoise_lite-4M-v1.0-F32.gguf"})
 
 print(f"FAIL: {failures} case(s)" if failures else "PASS")
 sys.exit(1 if failures else 0)

@@ -125,7 +125,7 @@ if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND
 endif()
 add_subdirectory(ggml)
 
-add_library(stems STATIC src/separator.cpp src/htdemucs.cpp src/roformer.cpp src/backend_loader.cpp)
+add_library(stems STATIC src/separator.cpp src/htdemucs.cpp src/roformer.cpp src/vr.cpp src/backend_loader.cpp)
 target_include_directories(stems PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(stems PUBLIC ggml ${CMAKE_DL_LIBS})
 # The archive is stems_core so it never shares a file name with libstems: on MSVC stems.dll's
@@ -162,6 +162,8 @@ set_target_properties(stems_shared PROPERTIES OUTPUT_NAME stems)
 target_link_libraries(stems_shared PRIVATE stems)
 
 if(STEMS_BUILD_TOOLS)
+    add_executable(stems-vr-parity tools/stems-vr-parity.cpp)
+    target_link_libraries(stems-vr-parity PRIVATE stems)
     add_executable(stems-split tools/stems-split.cpp)
     target_link_libraries(stems-split PRIVATE stems)
 
@@ -203,6 +205,8 @@ if(STEMS_BUILD_TOOLS)
     # ci/package-windows.ps1 uses to check a staged package from outside its folder.
     add_executable(stems-dsp-test tests/dsp_test.cpp)
     target_link_libraries(stems-dsp-test PRIVATE stems)
+    add_executable(stems-vr-dsp-test tests/vr_dsp_test.cpp)
+    target_link_libraries(stems-vr-dsp-test PRIVATE stems)
     add_executable(stems-utf8-path-test tests/utf8_path_test.cpp)
     target_link_libraries(stems-utf8-path-test PRIVATE stems)
     if(NOT STEMS_STATIC)
@@ -213,6 +217,7 @@ if(STEMS_BUILD_TOOLS)
     endif()
     if(BUILD_TESTING)
         add_test(NAME stems-dsp-test COMMAND stems-dsp-test)
+        add_test(NAME stems-vr-dsp-test COMMAND stems-vr-dsp-test)
         add_test(NAME stems-utf8-path-test COMMAND stems-utf8-path-test "${CMAKE_CURRENT_BINARY_DIR}")
         if(NOT STEMS_STATIC)
             add_test(NAME stems-abi-test

@@ -132,6 +132,8 @@ const std::vector<std::pair<const char*, const char*>> kKnownModels = {
     {"htdemucs_6s", R"(["drums","bass","other","vocals","guitar","piano"])"},
     {"mel_band_roformer_kim", R"(["vocals","instrumental"])"},
     {"bs_roformer_viperx_317", R"(["vocals","instrumental"])"},
+    {"uvr_denoise_lite", R"(["noise","denoised"])"},
+    {"uvr_denoise", R"(["noise","denoised"])"},
 };
 
 // The /props fields beyond the shared runtime ones: the models directory and the file each

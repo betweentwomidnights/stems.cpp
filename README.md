@@ -2,13 +2,14 @@
 
 Stem separation for the gary ecosystem in C++ on [ggml](https://github.com/betweentwomidnights/ggml):
 Meta's **HTDemucs v4** for 4 and 6 stems, and the **RoFormer** family (Mel-Band and Band-Split)
-that UVR uses for vocals and instrumentals. No PyTorch, no Python at inference time.
+that UVR uses for vocals and instrumentals. **UVR DeNoise-Lite and DeNoise** use the VR 5.1
+family for noise removal. No PyTorch, no Python at inference time.
 A sibling of [sa3.cpp](https://github.com/betweentwomidnights/sa3.cpp) and
 [audiocraft.cpp](https://github.com/betweentwomidnights/audiocraft.cpp): same ggml fork, same pin,
 same build scripts, same service shape. It exists because gary4juce's Carey extract tab says
 "if you have a stem separator it may work better". This is that separator.
 
-Every model matches its PyTorch reference **sample for sample**. For HTDemucs that means
+The published HTDemucs and RoFormer models match their PyTorch references **sample for sample**. For HTDemucs that means
 `demucs --shifts 0` on a 20 s song, through the whole split/overlap/trim path, at 71–126 dB SNR
 per stem (float32 rounding). For the RoFormers it is the chunked `demix_track` the checkpoints
 were published with, at 62–73 dB on CPU and CUDA:
@@ -25,6 +26,17 @@ Files are named `<model>-<size>-v1.0-<F32|F16>.gguf`, e.g. `htdemucs-42M-v1.0-F3
 [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) covers the naming, the repositories and the licenses.
 F32 is the reference. F16 is published where it was measured to hold up (each model card has the
 numbers).
+
+The VR denoisers are available through local conversion in F32:
+
+| model | outputs | GGUF size | conversion |
+|---|---|---|---|
+| `uvr_denoise_lite` | noise, denoised | 16.8 MiB | `python tools/convert_vr.py --preset denoise_lite models/` |
+| `uvr_denoise` | noise, denoised | 120.8 MiB | `python tools/convert_vr.py --preset denoise models/` |
+
+The converter downloads checksum-verified checkpoints and needs torch, numpy, scipy and gguf.
+These files are not yet published through `models.sh`/`models.cmd`. See [docs/VR.md](docs/VR.md)
+for the supported VR family, the portable preprocessing contract and measured parity.
 
 See [docs/PARITY.md](docs/PARITY.md) for the numbers and how to reproduce them.
 
@@ -64,6 +76,8 @@ stems-split -m models/htdemucs-42M-v1.0-F32.gguf -i song.wav -o stems/          
 stems-split -m models/htdemucs-42M-v1.0-F32.gguf -i loop.wav -o stems/ --two-stems drums   # drums + no_drums
 stems-split -m models/htdemucs_6s-27M-v1.0-F32.gguf -i song.wav -o stems/ --stems guitar,piano
 stems-split -m models/mel_band_roformer_kim-0.2B-v1.0-F32.gguf -i song.wav -o stems/       # vocals + instrumental
+stems-split -m models/uvr_denoise_lite-4M-v1.0-F32.gguf -i recording.wav -o clean/ --stems denoised
+stems-split -m models/uvr_denoise-32M-v1.0-F32.gguf -i recording.wav -o clean/ --stems denoised
 ```
 
 Any WAV works: 16/24/32-bit or float, any sample rate (band-limited resample to 44.1 kHz),
@@ -71,6 +85,11 @@ mono or stereo. Stems come out 16-bit, scaled down only if they would clip (demu
 `--clip-mode rescale`), or `--float32`. `--shifts N` averages N random time shifts, like demucs,
 at N times the cost. `--overlap` defaults to the model's own: 0.25 for HTDemucs, 0.5 for the
 RoFormers (their `num_overlap: 2`).
+
+VR models use cropped spectrogram windows instead; explicit `--overlap` and nonzero `--shifts`
+are rejected. Both outputs reconstruct the model's filtered spectral representation, so their
+sum is not guaranteed to reproduce the original waveform. VR does not add UVR's optional
+aggressiveness, test-time augmentation, artifact merging or high-end mirroring.
 
 `no_X` from `--two-stems X` is the **sum of the other stems**. That is demucs' definition, and it
 is not the same as mix minus X. A single-stem RoFormer is the other way round: it estimates
@@ -93,7 +112,8 @@ GET  /api/juce/poll_status/<id>  -> {status, progress, separation_in_progress, s
 ```
 
 Request: `audio_data` (base64 WAV) and optionally `model` (`htdemucs` | `htdemucs_6s` |
-`htdemucs_ft` | `mel_band_roformer_kim` | `bs_roformer_viperx_317`), `two_stems`, `stems` (list), `shifts`, `overlap`, `seed`, `float32`. The session
+`htdemucs_ft` | `mel_band_roformer_kim` | `bs_roformer_viperx_317` | `uvr_denoise_lite` | `uvr_denoise`),
+`two_stems`, `stems` (list), `shifts`, `overlap`, `seed`, `float32`. The session
 and poll shape is audiocraft.cpp's, so gary4juce can reuse the client code it already has for
 terry. One job at a time. The model stays resident between requests and swaps when a different
 one is asked for. `stems-server --version` and `--props` answer without binding a port or loading
@@ -162,6 +182,8 @@ on the same ggml fork. tinycrops' original repo is at
 
 ## Credits
 
+[Ultimate Vocal Remover](https://github.com/Anjok07/ultimatevocalremovergui) for the VR 5.1
+network and preprocessing configurations (see [docs/VR.md](docs/VR.md) for pinned sources),
 [demucs](https://github.com/facebookresearch/demucs) (Défossez et al., MIT, code and weights),
 [ggml](https://github.com/ggml-org/ggml). The GGUF loader, WAV reader, HTTP session helpers
 and build scripts come from betweentwomidnights' audiocraft.cpp and sa3.cpp (MIT).
