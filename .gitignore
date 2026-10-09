@@ -8,4 +8,5 @@ tests/data/*.wav
 cuda-build.log
 tests/data/
 models/src/
+__pycache__/
 dist*/
