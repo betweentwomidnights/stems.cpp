@@ -2,14 +2,16 @@
 # Download stems.cpp GGUFs from Hugging Face (public repos) with curl. No Python needed.
 #
 # Usage: ./models.sh [--encoding f32|f16] [--namespace <hf-org>] [--out DIR] [--dry-run] [MODEL ...|all]
-#   MODEL: htdemucs (default), htdemucs_6s, htdemucs_ft, mel_band_roformer_kim, bs_roformer_viperx_317
+#   MODEL: htdemucs (default), htdemucs_6s, htdemucs_ft, mel_band_roformer_kim, bs_roformer_viperx_317,
+#          uvr_denoise, uvr_denoise_lite, uvr_deecho_normal, uvr_deecho_aggressive, uvr_deecho_dereverb
 #   defaults: htdemucs, F32, into ./models
 #
 # Files follow docs/DISTRIBUTION.md, e.g. htdemucs-42M-v1.0-F32.gguf; stems-server finds them by
 # model name. F32 is what every parity number in docs/PARITY.md was measured on. F16 is
 # published only where it was measured to hold up; asking for it on a model without one fetches
-# F32 and says so. bs_roformer_viperx_317 has no stated upstream license: read its model card
-# before redistributing it. To convert the checkpoints yourself instead, see tools/convert_*.py.
+# F32 and says so. bs_roformer_viperx_317 and the uvr_* models have no stated upstream license:
+# read their model cards before redistributing them. To convert the checkpoints yourself instead,
+# see tools/convert_*.py.
 # Windows: models.cmd, or run this from git-bash.
 set -eu
 
@@ -25,7 +27,7 @@ while [ $# -gt 0 ]; do
     --namespace) NAMESPACE="$2"; shift ;;
     --out)       OUT="$2"; shift ;;
     --dry-run)   DRY_RUN=1 ;;
-    -h|--help)   sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)   sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*)          echo "unknown option: $1" >&2; exit 1 ;;
     *)           MODELS+=("$1") ;;
   esac
@@ -33,7 +35,8 @@ while [ $# -gt 0 ]; do
 done
 [ ${#MODELS[@]} -gt 0 ] || MODELS=(htdemucs)
 if [ "${MODELS[0]}" = all ]; then
-  MODELS=(htdemucs htdemucs_6s htdemucs_ft mel_band_roformer_kim bs_roformer_viperx_317)
+  MODELS=(htdemucs htdemucs_6s htdemucs_ft mel_band_roformer_kim bs_roformer_viperx_317
+          uvr_denoise uvr_denoise_lite uvr_deecho_normal uvr_deecho_aggressive uvr_deecho_dereverb)
 fi
 
 case "$ENCODING" in
@@ -58,6 +61,11 @@ spec() {   # model -> "<repo> <size label>"
     htdemucs_ft)            echo "htdemucs-GGUF 4x42M" ;;
     mel_band_roformer_kim)  echo "mel-band-roformer-kim-GGUF 0.2B" ;;
     bs_roformer_viperx_317) echo "bs-roformer-viperx-317-GGUF 0.2B" ;;
+    uvr_denoise)            echo "uvr-vr-GGUF 32M" ;;
+    uvr_denoise_lite)       echo "uvr-vr-GGUF 4M" ;;
+    uvr_deecho_normal)      echo "uvr-vr-GGUF 32M" ;;
+    uvr_deecho_aggressive)  echo "uvr-vr-GGUF 32M" ;;
+    uvr_deecho_dereverb)    echo "uvr-vr-GGUF 56M" ;;
     *) return 1 ;;
   esac
 }

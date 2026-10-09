@@ -27,7 +27,9 @@ Files are named `<model>-<size>-v1.0-<F32|F16>.gguf`, e.g. `htdemucs-42M-v1.0-F3
 F32 is the reference. F16 is published where it was measured to hold up (each model card has the
 numbers).
 
-The UVR VR denoise, de-echo and de-reverb models are available through local conversion in F32:
+The UVR VR denoise, de-echo and de-reverb models are published in F32 at
+[thepatch/uvr-vr-GGUF](https://huggingface.co/thepatch/uvr-vr-GGUF) (**no upstream license**, see its
+card): `./models.sh uvr_denoise uvr_deecho_normal` and so on. To convert them yourself instead:
 
 | model | outputs | GGUF size | conversion |
 |---|---|---|---|
@@ -38,7 +40,7 @@ The UVR VR denoise, de-echo and de-reverb models are available through local con
 | `uvr_deecho_dereverb` | no_reverb, reverb | 212.8 MiB | `python tools/convert_vr.py --preset deecho_dereverb models/` |
 
 The converter downloads checksum-verified checkpoints and needs torch, numpy, scipy and gguf.
-These files are not yet published through `models.sh`/`models.cmd`. See [docs/VR.md](docs/VR.md)
+See [docs/VR.md](docs/VR.md)
 for the supported VR family, the portable preprocessing contract and measured parity.
 
 [anvuew's room dereverb](https://huggingface.co/anvuew/dereverb_room) (GPL-3.0) is a mono

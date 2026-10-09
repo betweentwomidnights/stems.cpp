@@ -2,11 +2,12 @@
 setlocal enabledelayedexpansion
 rem Download stems.cpp GGUFs from Hugging Face (public repos) with curl.exe. No Python needed.
 rem Usage: models.cmd [--encoding f32^|f16] [--namespace ORG] [--out DIR] [--dry-run] [MODEL ...^|all]
-rem   MODEL: htdemucs (default), htdemucs_6s, htdemucs_ft, mel_band_roformer_kim, bs_roformer_viperx_317
+rem   MODEL: htdemucs (default), htdemucs_6s, htdemucs_ft, mel_band_roformer_kim, bs_roformer_viperx_317,
+rem          uvr_denoise, uvr_denoise_lite, uvr_deecho_normal, uvr_deecho_aggressive, uvr_deecho_dereverb
 rem   defaults: htdemucs, F32, into .\models
 rem Same behaviour as models.sh; see docs\DISTRIBUTION.md. F16 is published only where it was
-rem measured to hold up; asking for it elsewhere fetches F32. bs_roformer_viperx_317 has no stated
-rem upstream license: read its model card before redistributing it.
+rem measured to hold up; asking for it elsewhere fetches F32. bs_roformer_viperx_317 and the uvr_*
+rem models have no stated upstream license: read their model cards before redistributing them.
 
 set "ENCODING=f32"
 set "NAMESPACE=thepatch"
@@ -32,7 +33,7 @@ goto parse
 :parsed
 
 if "%MODELS%"=="" set "MODELS= htdemucs"
-if /I "%MODELS%"==" all" set "MODELS= htdemucs htdemucs_6s htdemucs_ft mel_band_roformer_kim bs_roformer_viperx_317"
+if /I "%MODELS%"==" all" set "MODELS= htdemucs htdemucs_6s htdemucs_ft mel_band_roformer_kim bs_roformer_viperx_317 uvr_denoise uvr_denoise_lite uvr_deecho_normal uvr_deecho_aggressive uvr_deecho_dereverb"
 
 if /I "%ENCODING%"=="f32" ( set "ENC=F32" & goto encoding_ok )
 if /I "%ENCODING%"=="f16" ( set "ENC=F16" & goto encoding_ok )
@@ -48,6 +49,11 @@ for %%M in (%MODELS%) do (
   if /I "!M!"=="htdemucs_ft"            ( set "REPO=htdemucs-GGUF" & set "LABEL=4x42M" )
   if /I "!M!"=="mel_band_roformer_kim"  ( set "REPO=mel-band-roformer-kim-GGUF" & set "LABEL=0.2B" )
   if /I "!M!"=="bs_roformer_viperx_317" ( set "REPO=bs-roformer-viperx-317-GGUF" & set "LABEL=0.2B" )
+  if /I "!M!"=="uvr_denoise"            ( set "REPO=uvr-vr-GGUF" & set "LABEL=32M" )
+  if /I "!M!"=="uvr_denoise_lite"       ( set "REPO=uvr-vr-GGUF" & set "LABEL=4M" )
+  if /I "!M!"=="uvr_deecho_normal"      ( set "REPO=uvr-vr-GGUF" & set "LABEL=32M" )
+  if /I "!M!"=="uvr_deecho_aggressive"  ( set "REPO=uvr-vr-GGUF" & set "LABEL=32M" )
+  if /I "!M!"=="uvr_deecho_dereverb"    ( set "REPO=uvr-vr-GGUF" & set "LABEL=56M" )
   if "!REPO!"=="" ( echo unknown model: !M! ^(try --help^) & exit /b 1 )
   set "E=%ENC%"
   if "!E!"=="F16" (

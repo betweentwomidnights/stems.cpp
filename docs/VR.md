@@ -44,9 +44,10 @@ format and the C ABI stay unchanged. Outputs are ordered as in the table above.
 `--stems denoised` (or `no_echo`, `no_reverb`) selects the clean output but still runs the
 complete network.
 
-No F16/quantized version or hosted download is advertised yet. Checkpoint redistribution
-terms are not established by the mirror; the converter records `general.license=other` unless
-an exact license is supplied explicitly. Conversion does not imply permission to redistribute.
+The F32 GGUFs are published at [thepatch/uvr-vr-GGUF](https://huggingface.co/thepatch/uvr-vr-GGUF)
+(`models.sh`/`models.cmd`); there is no F16 or quantized version. No license is stated upstream:
+the converter records `general.license=other` unless an exact license is supplied, and the
+repository carries the same caveat as viperx's (docs/DISTRIBUTION.md).
 
 ## Portable spectral contract
 
