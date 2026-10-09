@@ -27,16 +27,25 @@ Files are named `<model>-<size>-v1.0-<F32|F16>.gguf`, e.g. `htdemucs-42M-v1.0-F3
 F32 is the reference. F16 is published where it was measured to hold up (each model card has the
 numbers).
 
-The VR denoisers are available through local conversion in F32:
+The UVR VR denoise, de-echo and de-reverb models are available through local conversion in F32:
 
 | model | outputs | GGUF size | conversion |
 |---|---|---|---|
 | `uvr_denoise_lite` | noise, denoised | 16.8 MiB | `python tools/convert_vr.py --preset denoise_lite models/` |
 | `uvr_denoise` | noise, denoised | 120.8 MiB | `python tools/convert_vr.py --preset denoise models/` |
+| `uvr_deecho_normal` | no_echo, echo | 120.8 MiB | `python tools/convert_vr.py --preset deecho_normal models/` |
+| `uvr_deecho_aggressive` | echo, no_echo | 120.8 MiB | `python tools/convert_vr.py --preset deecho_aggressive models/` |
+| `uvr_deecho_dereverb` | no_reverb, reverb | 212.8 MiB | `python tools/convert_vr.py --preset deecho_dereverb models/` |
 
 The converter downloads checksum-verified checkpoints and needs torch, numpy, scipy and gguf.
 These files are not yet published through `models.sh`/`models.cmd`. See [docs/VR.md](docs/VR.md)
 for the supported VR family, the portable preprocessing contract and measured parity.
+
+[anvuew's room dereverb](https://huggingface.co/anvuew/dereverb_room) (GPL-3.0) is a mono
+BS-RoFormer for vocals recorded in a room: `python tools/convert_roformer.py --preset
+dereverb_room models/` writes `bs_roformer_dereverb_room` (noreverb, reverb; 112.3 MiB F32).
+A mono model runs on each channel of a stereo input separately, so its stems are stereo like
+every other model's.
 
 See [docs/PARITY.md](docs/PARITY.md) for the numbers and how to reproduce them.
 
@@ -78,6 +87,8 @@ stems-split -m models/htdemucs_6s-27M-v1.0-F32.gguf -i song.wav -o stems/ --stem
 stems-split -m models/mel_band_roformer_kim-0.2B-v1.0-F32.gguf -i song.wav -o stems/       # vocals + instrumental
 stems-split -m models/uvr_denoise_lite-4M-v1.0-F32.gguf -i recording.wav -o clean/ --stems denoised
 stems-split -m models/uvr_denoise-32M-v1.0-F32.gguf -i recording.wav -o clean/ --stems denoised
+stems-split -m models/uvr_deecho_normal-32M-v1.0-F32.gguf -i vocal.wav -o dry/ --stems no_echo
+stems-split -m models/bs_roformer_dereverb_room-29M-v1.0-F32.gguf -i vocal.wav -o dry/ --stems noreverb
 ```
 
 Any WAV works: 16/24/32-bit or float, any sample rate (band-limited resample to 44.1 kHz),
@@ -112,7 +123,8 @@ GET  /api/juce/poll_status/<id>  -> {status, progress, separation_in_progress, s
 ```
 
 Request: `audio_data` (base64 WAV) and optionally `model` (`htdemucs` | `htdemucs_6s` |
-`htdemucs_ft` | `mel_band_roformer_kim` | `bs_roformer_viperx_317` | `uvr_denoise_lite` | `uvr_denoise`),
+`htdemucs_ft` | `mel_band_roformer_kim` | `bs_roformer_viperx_317` | `uvr_denoise_lite` | `uvr_denoise` |
+`uvr_deecho_normal` | `uvr_deecho_aggressive` | `uvr_deecho_dereverb` | `bs_roformer_dereverb_room`),
 `two_stems`, `stems` (list), `shifts`, `overlap`, `seed`, `float32`. The session
 and poll shape is audiocraft.cpp's, so gary4juce can reuse the client code it already has for
 terry. One job at a time. The model stays resident between requests and swaps when a different

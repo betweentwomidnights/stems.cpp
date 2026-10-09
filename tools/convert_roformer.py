@@ -2,6 +2,7 @@
 """Convert a Mel-Band RoFormer or BS-RoFormer checkpoint to GGUF.
 
     python tools/convert_roformer.py --preset kim models/            # -> mel_band_roformer_kim-0.2B-v1.0-F32.gguf
+    python tools/convert_roformer.py --preset dereverb_room models/  # -> bs_roformer_dereverb_room-29M-v1.0-F32.gguf
     python tools/convert_roformer.py --preset viperx --ckpt model_bs_roformer_ep_317_sdr_12.9755.ckpt \\
         --config model_bs_roformer_ep_317_sdr_12.9755.yaml models/   # -> bs_roformer_viperx_317-0.2B-v1.0-F32.gguf
     python tools/convert_roformer.py --arch bs_roformer --ckpt model.ckpt --config config.yaml \\
@@ -62,6 +63,29 @@ PRESETS = {
                     version="sha256:5b84f37e8d444c8cb30c79d77f613a41c05868ff9c9ac6c7049c00aefae115aa",
                     files=["model_bs_roformer_ep_317_sdr_12.9755.ckpt"]),
         complement="instrumental"),
+    # anvuew/dereverb_room (GPL-3.0): mono BS-RoFormer that removes room reverb from vocals.
+    # The config is the repository's dereverb_room_anvuew.yaml at the pinned revision.
+    "dereverb_room": dict(
+        arch="bs_roformer", name="bs_roformer_dereverb_room", license="gpl-3.0",
+        ckpt="hf:anvuew/dereverb_room/dereverb_room_anvuew_sdr_13.7432.ckpt@0b85f5b80b7f779b2dfe80f33a1b35b38af9376d",
+        source_url="https://huggingface.co/anvuew/dereverb_room",
+        source=dict(name="dereverb_room", organization="anvuew",
+                    version="0b85f5b80b7f779b2dfe80f33a1b35b38af9376d",
+                    files=["dereverb_room_anvuew_sdr_13.7432.ckpt"]),
+        config=dict(
+            model=dict(dim=128, depth=16, stereo=False, num_stems=1, time_transformer_depth=1,
+                       freq_transformer_depth=1, linear_transformer_depth=0,
+                       freqs_per_bands=[2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5,
+                                        6, 6, 6, 6, 7, 7, 7, 8, 8, 8, 9, 9, 10, 10, 11, 12, 13, 14,
+                                        15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 29, 31, 33,
+                                        35, 37, 39, 41, 43, 45, 48, 52, 57, 64],
+                       dim_head=16, heads=8, dim_freqs_in=1025, stft_n_fft=2048,
+                       stft_hop_length=512, stft_win_length=2048, stft_normalized=False,
+                       mask_estimator_depth=3, skip_connection=False),
+            audio=dict(chunk_size=384000, sample_rate=44100),
+            training=dict(instruments=["noreverb", "reverb"], target_instrument="noreverb"),
+            inference=dict(num_overlap=2)),
+        complement="reverb"),
 }
 
 ROPE_THETA = 10000.0
@@ -69,10 +93,11 @@ ROPE_THETA = 10000.0
 
 def load_ckpt(spec):
     import torch
-    if spec.startswith("hf:"):
+    if spec.startswith("hf:"):   # hf:<repo>/<file>[@<revision>]
         from huggingface_hub import hf_hub_download
-        repo, fname = spec[3:].rsplit("/", 1)
-        spec = hf_hub_download(repo, fname)
+        path, _, rev = spec[3:].partition("@")
+        repo, fname = path.rsplit("/", 1)
+        spec = hf_hub_download(repo, fname, revision=rev or None)
     sd = torch.load(spec, map_location="cpu", weights_only=True)
     if "state_dict" in sd:
         sd = sd["state_dict"]
@@ -157,7 +182,9 @@ def main():
     channels = 2 if m.get("stereo", False) else 1
     if m.get("stft_win_length", m["stft_n_fft"]) != m["stft_n_fft"]:
         raise SystemExit("stft_win_length != stft_n_fft is not supported")
-    for k in ("linear_transformer_depth", "use_torch_checkpoint", "skip_connection"):
+    # use_torch_checkpoint is gradient checkpointing, a training-time memory option with no
+    # effect on the forward pass, so configs that set it convert as they are.
+    for k in ("linear_transformer_depth", "skip_connection"):
         if m.get(k):
             raise SystemExit(f"unsupported model option {k}={m[k]}")
     bands = mel_bands(m) if p["arch"] == "mel_band_roformer" else bs_bands(m)
