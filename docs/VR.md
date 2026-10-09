@@ -150,8 +150,19 @@ stems-vr-parity models/uvr_deecho_normal-32M-v1.0-F32.gguf tests/refs/vr_deecho_
 | De-Echo Aggressive / Vulkan | 116.1 dB | 121.3 dB | 112.2 dB |
 | DeEcho-DeReverb / CPU | 119.5 dB | 120.6 dB (no_reverb) | 106.1 dB (reverb) |
 | DeEcho-DeReverb / Vulkan | 121.7 dB | 119.9 dB | 105.4 dB |
+| De-Echo Normal / CUDA | 110.8 dB | 115.7 dB | 103.0 dB |
+| De-Echo Aggressive / CUDA | 110.2 dB | 117.1 dB | 108.0 dB |
+| DeEcho-DeReverb / CUDA | 77.6 dB | 76.4 dB | 61.8 dB |
 
-All cosines are 1.000000000 and every run passes the tool's silence and cancellation checks.
+Every run passes the tool's silence and cancellation checks. Cosines are 1.000000000 except
+DeEcho-DeReverb on CUDA (0.99999999 / 0.99999999 / 0.9999997). That model is the only 64-channel
+network, and CUDA alone loses about 40 dB on it, most likely because a matmul at its shapes runs
+on a reduced-precision tensor-core path despite the F32 precision request. The 48-channel models
+and DeNoise on the same build are unaffected. 62 dB is far below audibility, but it is the
+largest gap in this table and is worth tracing to the kernel.
+
+Not yet measured on Metal. These models run the same graph as DeNoise, which passed Metal parity
+on the M4 during betweentwomidnights/ggml#15, at different channel counts.
 
 Metal and mobile timing/memory measurements must be recorded separately; desktop GPU results
 do not establish real-time audio-callback or phone suitability.

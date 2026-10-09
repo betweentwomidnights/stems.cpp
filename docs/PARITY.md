@@ -153,11 +153,14 @@ runtime adds is mix minus vocals, computed in float.
 | bs_roformer_viperx_317 | Vulkan | 0.9999999 / 69.6 | 0.9999999 / 63.1 | 14.2 s |
 | bs_roformer_dereverb_room (mono) | CPU | 0.9999997 / 62.4 | 0.9999998 / 64.6 | 51.4 s |
 | bs_roformer_dereverb_room (mono) | Vulkan | 0.9999997 / 62.4 | 0.9999998 / 64.6 | 6.3 s |
+| bs_roformer_dereverb_room (mono) | CUDA | 0.9999997 / 62.4 | 0.9999998 / 64.6 | 6.4 s |
 
 anvuew's `dereverb_room` was measured on 2026-10-09 at ggml `9d0d910b`, against MSST's
 `BSRoformer` on a mono downmix of the same clip (one channel, so one pass). Through
 `load_separator` a mono model runs once per channel of a stereo input (dual mono), so a stereo
 separation costs twice that; each output channel is bit-identical to running that channel alone.
+It has not been measured on Metal yet; it runs the same BS-RoFormer graph as viperx (plain
+`mul_mat` + `soft_max_ext` attention, no flash attention) at dim 128 and head size 16.
 
 Vulkan is RTX 5070 Laptop (coopmat2), ggml `07f9348a`. Before betweentwomidnights/ggml#7, Vulkan
 rounded the operands of every F32 x F32 matmul to fp16 whatever `GGML_PREC_F32` said, and these
