@@ -4,6 +4,7 @@
     python tools/dump_refs_roformer.py kim tests/data/test.wav tests/refs/mel_band_roformer_kim
     python tools/dump_refs_roformer.py viperx_bs_317 tests/data/test.wav tests/refs/bs_roformer_viperx_317 \\
         --ckpt models/src/model_bs_roformer_ep_317_sdr_12.9755.ckpt
+    python tools/dump_refs_roformer.py dereverb_room tests/data/test-mono.wav tests/refs/bs_roformer_dereverb_room
 
 Writes, as .npy:
   seg_in.npy   [C, N]     the first chunk exactly as demix_track feeds it to the model
@@ -39,6 +40,13 @@ REFS = {
         code=MSST, files=["models/bs_roformer/attend.py", "models/bs_roformer/bs_roformer.py"],
         config="configs/viperx/model_bs_roformer_ep_317_sdr_12.9755.yaml",
         module="models.bs_roformer.bs_roformer", cls="BSRoformer", ckpt=None),
+    # Mono: the reference WAV must be mono too. The config lives in the model's own repository.
+    "dereverb_room": dict(
+        code=MSST, files=["models/bs_roformer/attend.py", "models/bs_roformer/bs_roformer.py"],
+        config="configs/dereverb_room_anvuew.yaml",
+        config_url="https://huggingface.co/anvuew/dereverb_room/resolve/0b85f5b80b7f779b2dfe80f33a1b35b38af9376d/dereverb_room_anvuew.yaml",
+        module="models.bs_roformer.bs_roformer", cls="BSRoformer",
+        ckpt="hf:anvuew/dereverb_room/dereverb_room_anvuew_sdr_13.7432.ckpt@0b85f5b80b7f779b2dfe80f33a1b35b38af9376d"),
 }
 
 
@@ -68,7 +76,14 @@ def main():
 
     base = os.path.join(os.path.dirname(os.path.abspath(args.out)), "_code")
     root, kim_root = os.path.join(base, args.ref), os.path.join(base, "kim_utils")
-    fetch(ref["code"], ref["files"] + [ref["config"]], root)
+    if "config_url" in ref:
+        dst = os.path.join(root, ref["config"])
+        if not os.path.exists(dst):
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            urllib.request.urlretrieve(ref["config_url"], dst)
+        fetch(ref["code"], ref["files"], root)
+    else:
+        fetch(ref["code"], ref["files"] + [ref["config"]], root)
     fetch(KIM, ["utils.py"], kim_root)
     sys.path.insert(0, root)
     sys.path.insert(1, kim_root)
@@ -89,7 +104,8 @@ def main():
         raise SystemExit("--ckpt is required for " + args.ref)
     if ckpt.startswith("hf:"):
         from huggingface_hub import hf_hub_download
-        ckpt = hf_hub_download(*ckpt[3:].rsplit("/", 1))
+        path, _, rev = ckpt[3:].partition("@")
+        ckpt = hf_hub_download(*path.rsplit("/", 1), revision=rev or None)
     sd = torch.load(ckpt, map_location="cpu", weights_only=True)
     model.load_state_dict(sd.get("state_dict", sd))
     model.eval()

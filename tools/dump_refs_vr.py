@@ -124,7 +124,7 @@ def main():
     ap.add_argument("--ckpt", type=Path)
     ap.add_argument("--window", type=int, default=256)
     args = ap.parse_args()
-    file, param_name, _ = PRESETS[args.preset]
+    file, param_name = PRESETS[args.preset][:2]
     params = json.load(urllib.request.urlopen(f"https://raw.githubusercontent.com/Anjok07/ultimatevocalremovergui/{UVR_REV}/lib_v5/vr_network/modelparams/{param_name}.json"))
     torch.set_num_threads(4)
     model = network(args.ckpt or Path("models/src")/file, params, args.out.parent/"_vr_code")

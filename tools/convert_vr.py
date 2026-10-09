@@ -3,6 +3,7 @@
 
 python tools/convert_vr.py --preset denoise_lite models/
 python tools/convert_vr.py --preset denoise models/
+python tools/convert_vr.py --preset deecho_normal models/      # also deecho_aggressive, deecho_dereverb
 
 Custom checkpoints require --ckpt, --params (UVR modelparams JSON), --name,
 --primary and --secondary. Only the 5.1 network and ordinary stereo channels
@@ -23,9 +24,14 @@ import gguf_meta
 
 UVR_REV = "a5f88453bfb2b38b05a965bcf67727243e0cbf19"
 HF_REV = "6f4fc0c"
+# (checkpoint, modelparams, SHA256, primary, secondary). The primary source is the one the
+# network's mask selects, as in UVR's model_data.json; the secondary is its complement.
 PRESETS = {
-    "denoise_lite": ("UVR-DeNoise-Lite.pth", "1band_sr44100_hl1024", "0023492fe98c406817b5253965de19ede65d1c147db015a3a428f07602e99571"),
-    "denoise": ("UVR-DeNoise.pth", "4band_v3", "5addf43ece5bddd18da9f575a02d7ffdb32342414e6ad7ac8d1dd7a04138a628"),
+    "denoise_lite": ("UVR-DeNoise-Lite.pth", "1band_sr44100_hl1024", "0023492fe98c406817b5253965de19ede65d1c147db015a3a428f07602e99571", "noise", "denoised"),
+    "denoise": ("UVR-DeNoise.pth", "4band_v3", "5addf43ece5bddd18da9f575a02d7ffdb32342414e6ad7ac8d1dd7a04138a628", "noise", "denoised"),
+    "deecho_normal": ("UVR-De-Echo-Normal.pth", "4band_v3", "b849dd575643b075c257fb7a96c2ef5a79d7a5e7df74a2b319ad47118f1ee769", "no_echo", "echo"),
+    "deecho_aggressive": ("UVR-De-Echo-Aggressive.pth", "4band_v3", "1bd1d79d9c5d1b17d20f96f8a9f8aff1b55a83014f70712446bf420c0188e0a0", "echo", "no_echo"),
+    "deecho_dereverb": ("UVR-DeEcho-DeReverb.pth", "4band_v3", "e644028ec82865dc0fe082bc6fea85a43f7c71cfe375caee2da2d154aa661ee7", "no_reverb", "reverb"),
 }
 
 
@@ -143,7 +149,7 @@ def main():
     if args.window < 144 or args.window > 1024 or args.window % 16:
         ap.error("window must be a multiple of 16 between 144 and 1024")
     if args.preset:
-        file, param_name, sha = PRESETS[args.preset]
+        file, param_name, sha, default_primary, default_secondary = PRESETS[args.preset]
         ckpt = args.ckpt or Path("models/src") / file
         ckpt.parent.mkdir(parents=True, exist_ok=True)
         if not ckpt.exists():
@@ -156,7 +162,7 @@ def main():
             url = f"https://raw.githubusercontent.com/Anjok07/ultimatevocalremovergui/{UVR_REV}/lib_v5/vr_network/modelparams/{param_name}.json"
             params = json.load(urllib.request.urlopen(url))
         name = args.name or "uvr_" + args.preset
-        primary, secondary = args.primary or "noise", args.secondary or "denoised"
+        primary, secondary = args.primary or default_primary, args.secondary or default_secondary
     else:
         if not all((args.ckpt, args.params, args.name, args.primary, args.secondary)):
             ap.error("custom VR models require --ckpt, --params, --name, --primary, --secondary")

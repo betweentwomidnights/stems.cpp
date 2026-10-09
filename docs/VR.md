@@ -1,12 +1,20 @@
 # UVR 5.1 VR family
 
 `vr_cascaded` architecture dispatch uses the existing Separator/C ABI, CLI and service.
-Both requested denoisers share the same implementation:
+The denoise, de-echo and de-reverb models share the same implementation:
 
-| model | network capacity (`nout` / `nout_lstm`) | magnitude bins | bands | GGUF |
-|---|---|---|---|---|
-| `uvr_denoise_lite` | 16 / 128 | 1024 + extra bin | 1 | 16.8 MiB F32 |
-| `uvr_denoise` | 48 / 128 | 672 + extra bin | 4 | 120.8 MiB F32 |
+| model | outputs (primary, secondary) | network capacity (`nout` / `nout_lstm`) | magnitude bins | bands | GGUF |
+|---|---|---|---|---|---|
+| `uvr_denoise_lite` | noise, denoised | 16 / 128 | 1024 + extra bin | 1 | 16.8 MiB F32 |
+| `uvr_denoise` | noise, denoised | 48 / 128 | 672 + extra bin | 4 | 120.8 MiB F32 |
+| `uvr_deecho_normal` | no_echo, echo | 48 / 128 | 672 + extra bin | 4 | 120.8 MiB F32 |
+| `uvr_deecho_aggressive` | echo, no_echo | 48 / 128 | 672 + extra bin | 4 | 120.8 MiB F32 |
+| `uvr_deecho_dereverb` | no_reverb, reverb | 64 / 128 | 672 + extra bin | 4 | 212.8 MiB F32 |
+
+The primary output is the one the network's mask selects, as in UVR's `model_data.json`; the
+secondary is its complement. That is why the two De-Echo models list their outputs in opposite
+orders. UVR's registry gives no capacity for DeEcho-DeReverb; its weights are the network's
+default 64 / 128, and the converter reads capacity from the weights for every model.
 
 The network has five encoder/decoder branches arranged as three cascaded stages. Each branch
 has a dilated ASPP module and a bidirectional LSTM. Convolutions, interpolation, pooling,
@@ -20,6 +28,9 @@ required tensor's type and dimensions before building a graph.
 ```sh
 python tools/convert_vr.py --preset denoise_lite models/
 python tools/convert_vr.py --preset denoise models/
+python tools/convert_vr.py --preset deecho_normal models/
+python tools/convert_vr.py --preset deecho_aggressive models/
+python tools/convert_vr.py --preset deecho_dereverb models/
 stems-split -m models/uvr_denoise-32M-v1.0-F32.gguf -i input.wav -o output/ --float32
 ```
 
@@ -28,9 +39,10 @@ which is ignored by Git, and verified by SHA256. `--ckpt` reuses a local checkpo
 source files are pinned to the seanghay mirror revision `6f4fc0c`; UVR modelparams and reference
 network code are pinned to `a5f88453bfb2b38b05a965bcf67727243e0cbf19`.
 
-The service recognizes both model IDs and resolves their locally converted GGUFs. Its request
-format and the C ABI stay unchanged. Outputs are ordered `noise`, then `denoised`.
-`--stems denoised` selects the clean output but still runs the complete network.
+The service recognizes all five model IDs and resolves their locally converted GGUFs. Its request
+format and the C ABI stay unchanged. Outputs are ordered as in the table above.
+`--stems denoised` (or `no_echo`, `no_reverb`) selects the clean output but still runs the
+complete network.
 
 No F16/quantized version or hosted download is advertised yet. Checkpoint redistribution
 terms are not established by the mirror; the converter records `general.license=other` unless
@@ -121,6 +133,36 @@ non-power-of-two FFTs, spectral round trips, filter endpoints and rational resam
 
 Both models also pass the C ABI smoke test, return both stems with progress callbacks, and
 produce the same float WAVs as the CLI on Vulkan. Cancellation after a completed window works.
+
+The three De-Echo models were checked the same way against unchanged UVR on the music excerpt
+(2026-10-09, ggml `9d0d910b`, same machine), from preset conversions:
+
+```sh
+python tools/dump_refs_vr.py deecho_normal tests/data/vr-music.wav tests/refs/vr_deecho_normal_music
+stems-vr-parity models/uvr_deecho_normal-32M-v1.0-F32.gguf tests/refs/vr_deecho_normal_music tests/data/vr-music.wav gpu
+```
+
+| model / backend | mask SNR | primary SNR | secondary SNR |
+|---|---|---|---|
+| De-Echo Normal / CPU | 118.7 dB | 123.1 dB (no_echo) | 110.7 dB (echo) |
+| De-Echo Normal / Vulkan | 119.3 dB | 122.7 dB | 110.2 dB |
+| De-Echo Aggressive / CPU | 114.8 dB | 122.0 dB (echo) | 112.9 dB (no_echo) |
+| De-Echo Aggressive / Vulkan | 116.1 dB | 121.3 dB | 112.2 dB |
+| DeEcho-DeReverb / CPU | 119.5 dB | 120.6 dB (no_reverb) | 106.1 dB (reverb) |
+| DeEcho-DeReverb / Vulkan | 121.7 dB | 119.9 dB | 105.4 dB |
+| De-Echo Normal / CUDA | 110.8 dB | 115.7 dB | 103.0 dB |
+| De-Echo Aggressive / CUDA | 110.2 dB | 117.1 dB | 108.0 dB |
+| DeEcho-DeReverb / CUDA | 77.6 dB | 76.4 dB | 61.8 dB |
+
+Every run passes the tool's silence and cancellation checks. Cosines are 1.000000000 except
+DeEcho-DeReverb on CUDA (0.99999999 / 0.99999999 / 0.9999997). That model is the only 64-channel
+network, and CUDA alone loses about 40 dB on it, most likely because a matmul at its shapes runs
+on a reduced-precision tensor-core path despite the F32 precision request. The 48-channel models
+and DeNoise on the same build are unaffected. 62 dB is far below audibility, but it is the
+largest gap in this table and is worth tracing to the kernel.
+
+Not yet measured on Metal. These models run the same graph as DeNoise, which passed Metal parity
+on the M4 during betweentwomidnights/ggml#15, at different channel counts.
 
 Metal and mobile timing/memory measurements must be recorded separately; desktop GPU results
 do not establish real-time audio-callback or phone suitability.
