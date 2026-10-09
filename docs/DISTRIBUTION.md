@@ -9,7 +9,8 @@ scripts, the server's model lookup and the model cards all follow this file.
 The GGUF convention (`ggml/docs/gguf.md`): `<BaseName>-<SizeLabel>-<Version>-<Encoding>.gguf`.
 
 - **BaseName:** the model id the runtime reports and `stems-server` takes as `model`:
-  `htdemucs`, `htdemucs_6s`, `htdemucs_ft`, `mel_band_roformer_kim`, `bs_roformer_viperx_317`.
+  `htdemucs`, `htdemucs_6s`, `htdemucs_ft`, `mel_band_roformer_kim`, `bs_roformer_viperx_317`,
+  `uvr_denoise`, `uvr_denoise_lite`, `uvr_deecho_normal`, `uvr_deecho_aggressive`, `uvr_deecho_dereverb`.
   Underscores stay; `-` only separates fields.
 - **SizeLabel:** the parameter class, rounded as sa3.cpp does: `0.xB` from 100M up, `NM` below.
   A bag of models is `<n>x<per-model>`, the convention's form for groups of experts.
@@ -22,10 +23,12 @@ htdemucs_6s-27M-v1.0-F32.gguf
 htdemucs_ft-4x42M-v1.0-F32.gguf
 mel_band_roformer_kim-0.2B-v1.0-F32.gguf
 bs_roformer_viperx_317-0.2B-v1.0-F32.gguf
+uvr_denoise-32M-v1.0-F32.gguf
+uvr_deecho_dereverb-56M-v1.0-F32.gguf
 ```
 
-Given a directory, `tools/convert_htdemucs.py` and `tools/convert_roformer.py` write these names
-themselves.
+Given a directory, `tools/convert_htdemucs.py`, `tools/convert_roformer.py` and `tools/convert_vr.py`
+write these names themselves.
 
 ## Metadata
 
@@ -57,6 +60,7 @@ every encoding of its models, plus `README.md` (the card from `docs/model-cards/
 | [`thepatch/htdemucs-GGUF`](https://huggingface.co/thepatch/htdemucs-GGUF) | htdemucs, htdemucs_6s, htdemucs_ft | MIT (Meta) |
 | [`thepatch/mel-band-roformer-kim-GGUF`](https://huggingface.co/thepatch/mel-band-roformer-kim-GGUF) | mel_band_roformer_kim | MIT (KimberleyJSN) |
 | [`thepatch/bs-roformer-viperx-317-GGUF`](https://huggingface.co/thepatch/bs-roformer-viperx-317-GGUF) | bs_roformer_viperx_317 | none stated upstream |
+| [`thepatch/uvr-vr-GGUF`](https://huggingface.co/thepatch/uvr-vr-GGUF) | uvr_denoise, uvr_denoise_lite, uvr_deecho_normal, uvr_deecho_aggressive, uvr_deecho_dereverb | none stated upstream |
 
 The three HTDemucs models share a repository: same source, architecture and license, the way
 sa3.cpp's Stable Audio Open Small repo carries its finetunes. The RoFormers get one each, because
@@ -65,6 +69,11 @@ a repository's license metadata is per repository, and viperx's differs.
 **viperx's BS-RoFormer has no license anywhere upstream.** UVR's model repo releases the
 checkpoint without one. It is published with `license: other`, a NOTICE saying exactly that, and
 an offer to remove it on request. Treat it as unlicensed.
+
+**The UVR VR models have no license upstream either.** They share one repository (same source,
+architecture and terms) and are published the same way as viperx: `license: other`, the caveat in
+the card, and removal on request. anvuew's room dereverb (`bs_roformer_dereverb_room`, GPL-3.0) is
+not published here; convert it locally with `tools/convert_roformer.py --preset dereverb_room`.
 
 ## Encodings
 
