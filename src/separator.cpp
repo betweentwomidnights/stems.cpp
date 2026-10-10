@@ -4,6 +4,7 @@
 #include "gguf_model.h"
 #include "htdemucs.h"
 #include "roformer.h"
+#include "tfc_tdf.h"
 #include "vr.h"
 
 #include <algorithm>
@@ -63,6 +64,7 @@ std::unique_ptr<Separator> load_separator(const std::string& path, const char* d
     const std::string arch = gguf_architecture(path);
     if (arch == "htdemucs") return std::make_unique<HTDemucs>(path, device, cpu_threads);
     if (arch == "vr_cascaded") return std::make_unique<VR>(path, device, cpu_threads);
+    if (arch == "tfc_tdf") return std::make_unique<TFCTDF>(path, device, cpu_threads);
     if (arch == "mel_band_roformer" || arch == "bs_roformer")
         return stereo(std::make_unique<RoFormer>(path, device, cpu_threads));
     throw std::runtime_error(path + ": unsupported architecture '" + arch + "'");

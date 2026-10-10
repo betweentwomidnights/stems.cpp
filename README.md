@@ -49,6 +49,17 @@ dereverb_room models/` writes `bs_roformer_dereverb_room` (noreverb, reverb; 112
 A mono model runs on each channel of a stereo input separately, so its stems are stereo like
 every other model's.
 
+Two TFC-TDF models from UVR's and MSST's lists run on one more architecture (`tfc_tdf`); neither
+has a stated license, so convert them locally (needs numpy and gguf, plus onnx for Kim or torch
+and pyyaml for DrumSep):
+
+| model | stems | GGUF size | conversion |
+|---|---|---|---|
+| `mdx_net_kim_vocal_2` | vocals, instrumental (UVR's MDX-Net Kim_Vocal_2) | 63.6 MiB | `python tools/convert_mdx.py --preset kim_vocal_2 models/` |
+| `mdx23c_drumsep` | kick, snare, toms, hh, ride, crash (aufr33 & jarredou's MDX23C DrumSep, for a drum stem) | 417.3 MiB | `python tools/convert_mdx.py --preset drumsep models/` |
+
+See [docs/MDX.md](docs/MDX.md) for the pinned sources, the chunking each one follows and parity.
+
 See [docs/PARITY.md](docs/PARITY.md) for the numbers and how to reproduce them.
 
 ## Build
@@ -126,7 +137,8 @@ GET  /api/juce/poll_status/<id>  -> {status, progress, separation_in_progress, s
 
 Request: `audio_data` (base64 WAV) and optionally `model` (`htdemucs` | `htdemucs_6s` |
 `htdemucs_ft` | `mel_band_roformer_kim` | `bs_roformer_viperx_317` | `uvr_denoise_lite` | `uvr_denoise` |
-`uvr_deecho_normal` | `uvr_deecho_aggressive` | `uvr_deecho_dereverb` | `bs_roformer_dereverb_room`),
+`uvr_deecho_normal` | `uvr_deecho_aggressive` | `uvr_deecho_dereverb` | `bs_roformer_dereverb_room` |
+`mdx_net_kim_vocal_2` | `mdx23c_drumsep`),
 `two_stems`, `stems` (list), `shifts`, `overlap`, `seed`, `float32`. The session
 and poll shape is audiocraft.cpp's, so gary4juce can reuse the client code it already has for
 terry. One job at a time. The model stays resident between requests and swaps when a different
@@ -177,6 +189,8 @@ see [docs/RUNTIME_RELEASE.md](docs/RUNTIME_RELEASE.md) for loading it from a plu
   per 8 s chunk. The two architectures differ only in which STFT bins form each band, and
   `tools/convert_roformer.py` writes that as plain index lists, so the runtime needs no librosa.
   Attention runs in groups of sequences so the score tensor stays under 256 MB.
+- `src/tfc_tdf.cpp` runs TFC-TDF U-Nets (UVR's MDX-Net from its ONNX graph, MDX23C from its
+  checkpoint) as one ggml graph per chunk, with UVR's or MSST's chunking as the GGUF says.
 - `src/htdemucs.cpp` holds the network as one ggml graph per 7.8 s segment: freq branch, time branch,
   and the 5-layer cross-transformer between them. Every conv is an F32 im2col plus matmul. Transposed convs
   are a matmul plus an explicit overlap-add, so only ops every backend has are used.

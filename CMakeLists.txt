@@ -125,7 +125,7 @@ if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND
 endif()
 add_subdirectory(ggml)
 
-add_library(stems STATIC src/separator.cpp src/htdemucs.cpp src/roformer.cpp src/vr.cpp src/backend_loader.cpp)
+add_library(stems STATIC src/separator.cpp src/htdemucs.cpp src/roformer.cpp src/vr.cpp src/tfc_tdf.cpp src/backend_loader.cpp)
 target_include_directories(stems PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(stems PUBLIC ggml ${CMAKE_DL_LIBS})
 # The archive is stems_core so it never shares a file name with libstems: on MSVC stems.dll's

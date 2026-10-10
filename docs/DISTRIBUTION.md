@@ -10,7 +10,8 @@ The GGUF convention (`ggml/docs/gguf.md`): `<BaseName>-<SizeLabel>-<Version>-<En
 
 - **BaseName:** the model id the runtime reports and `stems-server` takes as `model`:
   `htdemucs`, `htdemucs_6s`, `htdemucs_ft`, `mel_band_roformer_kim`, `bs_roformer_viperx_317`,
-  `uvr_denoise`, `uvr_denoise_lite`, `uvr_deecho_normal`, `uvr_deecho_aggressive`, `uvr_deecho_dereverb`.
+  `uvr_denoise`, `uvr_denoise_lite`, `uvr_deecho_normal`, `uvr_deecho_aggressive`, `uvr_deecho_dereverb`,
+  `mdx_net_kim_vocal_2`, `mdx23c_drumsep` (the last two converted locally, not published).
   Underscores stay; `-` only separates fields.
 - **SizeLabel:** the parameter class, rounded as sa3.cpp does: `0.xB` from 100M up, `NM` below.
   A bag of models is `<n>x<per-model>`, the convention's form for groups of experts.
@@ -25,10 +26,12 @@ mel_band_roformer_kim-0.2B-v1.0-F32.gguf
 bs_roformer_viperx_317-0.2B-v1.0-F32.gguf
 uvr_denoise-32M-v1.0-F32.gguf
 uvr_deecho_dereverb-56M-v1.0-F32.gguf
+mdx_net_kim_vocal_2-17M-v1.0-F32.gguf
+mdx23c_drumsep-0.1B-v1.0-F32.gguf
 ```
 
-Given a directory, `tools/convert_htdemucs.py`, `tools/convert_roformer.py` and `tools/convert_vr.py`
-write these names themselves.
+Given a directory, `tools/convert_htdemucs.py`, `tools/convert_roformer.py`, `tools/convert_vr.py`
+and `tools/convert_mdx.py` write these names themselves.
 
 ## Metadata
 
@@ -74,6 +77,12 @@ an offer to remove it on request. Treat it as unlicensed.
 architecture and terms) and are published the same way as viperx: `license: other`, the caveat in
 the card, and removal on request. anvuew's room dereverb (`bs_roformer_dereverb_room`, GPL-3.0) is
 not published here; convert it locally with `tools/convert_roformer.py --preset dereverb_room`.
+
+**The two TFC-TDF models are not published either.** Kim_Vocal_2 ships in UVR's model list with
+no license, and DrumSep's original release (`github.com/jarredou/models`) is gone with no license
+ever stated for the weights; its mirror's own code is AGPL-3.0, which says nothing about them.
+Convert them locally with `tools/convert_mdx.py` (docs/MDX.md). Publishing them would need the
+authors' terms first, not just the viperx-style caveat.
 
 ## Encodings
 

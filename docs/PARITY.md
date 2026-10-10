@@ -210,6 +210,14 @@ build/bin/stems-parity --model models/bs_roformer_dereverb_room-29M-v1.0-F32.ggu
     --refs tests/refs/bs_roformer_dereverb_room --wav tests/data/test-mono.wav
 ```
 
+## TFC-TDF (MDX-Net, MDX23C)
+
+Kim_Vocal_2 is checked against its unchanged ONNX file in onnxruntime inside UVR's MDX chunking;
+DrumSep against ZFTurbo's own `TFC_TDF_net` and `demix`. Both pass on CPU, Vulkan and CUDA
+(2026-10-09, ggml `9d0d910b`) with cosine 1.0000000 on every output: Kim at 97–101 dB (vocals)
+and 140–144 dB (instrumental), DrumSep at 115–132 dB per drum stem over the whole clip.
+[docs/MDX.md](MDX.md) has the full table, the pipelines and how to reproduce them.
+
 ## Vulkan
 
 The Vulkan rows above are at ggml `07f9348a` and later. Before betweentwomidnights/ggml#7, ggml's
