@@ -72,8 +72,13 @@ Vulkan and CUDA: RTX 5070 Laptop. Every run passes stems.cpp's check (cosine >= 
 | De-Echo Aggressive | CPU / Vulkan / CUDA | 114.8 / 116.1 / 110.2 dB | 122.0 / 121.3 / 117.1 dB | 112.9 / 112.2 / 108.0 dB |
 | DeEcho-DeReverb | CPU / Vulkan / CUDA | 119.5 / 121.7 / 77.6 dB | 120.6 / 119.9 / 76.4 dB | 106.1 / 105.4 / 61.8 dB |
 
-DeEcho-DeReverb on CUDA is the one outlier, still far below audibility. DeNoise also passes on Apple
-Metal (M4); the De-Echo models run the same graph there but have not been measured on Metal yet.
+DeEcho-DeReverb on CUDA is the one outlier, still far below audibility.
+
+On Apple Metal (M4, 32 GB, references dumped there) every model passes too, with cosine
+1.000000000. Mask / primary / secondary SNR: De-Echo Normal 118.8 / 122.5 / 110.0 dB, De-Echo
+Aggressive 116.0 / 121.8 / 112.7 dB, DeEcho-DeReverb 121.9 / 120.3 / 105.8 dB (no sign of the CUDA
+gap), each in under 1.8 s for the 4 s excerpt. DeNoise passed Metal parity when ggml's im2col change
+was validated.
 
 SNR here is against reference outputs, not against clean recordings: it shows the port computes what
 UVR's network computes, not how well a model denoises.
