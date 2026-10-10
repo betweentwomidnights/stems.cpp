@@ -159,8 +159,10 @@ anvuew's `dereverb_room` was measured on 2026-10-09 at ggml `9d0d910b`, against 
 `BSRoformer` on a mono downmix of the same clip (one channel, so one pass). Through
 `load_separator` a mono model runs once per channel of a stereo input (dual mono), so a stereo
 separation costs twice that; each output channel is bit-identical to running that channel alone.
-It has not been measured on Metal yet; it runs the same BS-RoFormer graph as viperx (plain
-`mul_mat` + `soft_max_ext` attention, no flash attention) at dim 128 and head size 16.
+It runs the same BS-RoFormer graph as viperx (plain `mul_mat` + `soft_max_ext` attention, no
+flash attention) at dim 128 and head size 16. On an Apple M4 (Metal, ggml `4ad3b30b`, refs dumped
+there) it gives 0.9999999 / 69.9 dB (seg) and 0.9999999 / 68.8 dB (full) in 26.5 s for the
+20 s mono clip; a stereo separation runs about 0.5x realtime.
 
 Vulkan is RTX 5070 Laptop (coopmat2), ggml `07f9348a`. Before betweentwomidnights/ggml#7, Vulkan
 rounded the operands of every F32 x F32 matmul to fp16 whatever `GGML_PREC_F32` said, and these
@@ -275,3 +277,7 @@ Before 2026-10-02 HTDemucs did not run on Metal at all, at any ggml pin:
   `enc3`. They now run as H groups over `[W, C, H]`, the same norm.
 
 Both are pure re-expressions: CPU stems are byte-identical to before (htdemucs, htdemucs_6s).
+
+The TFC-TDF banded convolution hit the same left-padding limit and uses the same pad-and-roll
+since 2026-10-10; [docs/MDX.md](MDX.md) has its M4 numbers. The VR De-Echo models and the room
+dereverb ran on Metal without changes ([docs/VR.md](VR.md) and the RoFormer section above).

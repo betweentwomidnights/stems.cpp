@@ -210,7 +210,8 @@ struct TFCTDF::Impl {
         if (k->ne[0] != 3 || stride != 1 || pad != 1 || band >= H) {
             y = im2col_mm(ctx, x, k, stride, pad, pad);
         } else {
-            ggml_tensor* xp = ggml_pad_ext(ctx, x, 0, 0, 1, 1, 0, 0, 0, 0);      // zero rows above and below
+            // Zero rows above and below, as pad-right-then-roll: Metal's PAD only pads on the right.
+            ggml_tensor* xp = ggml_roll(ctx, ggml_pad(ctx, x, 0, 2, 0, 0), 0, 1, 0, 0);
             std::vector<ggml_tensor*> parts;
             for (int64_t h0 = 0; h0 < H; h0 += band) {
                 const int64_t rows = std::min(band, H - h0);

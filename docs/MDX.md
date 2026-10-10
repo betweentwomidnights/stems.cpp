@@ -151,6 +151,20 @@ backend is a possible follow-up. The Vulkan numbers are on `NV_coopmat2`, this R
 under coopmat1 (`GGML_VK_DISABLE_COOPMAT2=1`, `KHR_coopmat`) Kim's SNRs are identical for both
 convolution paths.
 
-Every row passes cosine >= 0.99999 and SNR >= 50 dB on every output. Not yet measured on Metal;
-every op in the graph (im2col, `mul_mat`, `norm`, `gelu_erf`, `pad`, `concat`, permutes) is
-one the other models already run there.
+Every row passes cosine >= 0.99999 and SNR >= 50 dB on every output.
+
+**Metal (Apple M4, 32 GB, ggml `4ad3b30b`, 2026-10-10)**, references dumped on that machine. Both
+models first aborted with `unsupported op 'PAD'`: Metal's `PAD` only pads on the right, and the
+banded 3x3 convolution padded its one-row halo on both sides. It now pads two rows on the right
+and rolls by one, as HTDemucs does; CPU stems are byte-identical to before. Cosine is 1.0000000
+on every output:
+
+| model / backend | seg | full (per output) | 20 s clip | peak memory |
+|---|---|---|---|---|
+| Kim_Vocal_2 / Metal | 97.6 | vocals 97.7, instrumental 140.7 | 8.7 s | 272 MB |
+| DrumSep / Metal | 97.8 – 129.0 | kick 131.8, snare 129.8, toms 125.9, hh 127.6, ride 125.8, crash 123.4 | 24.2 s | 762 MB |
+
+The M4's CPU (4 threads) is slow on both: an 8 s stereo excerpt took 24.5 s for Kim and 124 s
+for DrumSep through `stems-split`, about 0.3x and 0.1x realtime. Hosts that fall back to CPU,
+such as Intel Macs, should expect that. On Metal the C ABI returns every stem with progress,
+cancels after the first chunk, and writes the same float WAVs as the CLI.

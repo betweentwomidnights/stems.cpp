@@ -162,8 +162,21 @@ on a reduced-precision tensor-core path despite the F32 precision request. The 4
 and DeNoise on the same build are unaffected. 62 dB is far below audibility, but it is the
 largest gap in this table and is worth tracing to the kernel.
 
-Not yet measured on Metal. These models run the same graph as DeNoise, which passed Metal parity
-on the M4 during betweentwomidnights/ggml#15, at different channel counts.
+On an Apple M4 (32 GB, ggml `4ad3b30b`, 2026-10-10), with references dumped on that machine
+from the same music excerpt, all three pass on CPU and Metal with cosine 1.000000000:
+
+| model / backend | mask SNR | primary SNR | secondary SNR | separation time | peak memory |
+|---|---|---|---|---|---|
+| De-Echo Normal / CPU | 118.5 dB | 122.7 dB | 110.2 dB | 8.83 s | 1.34 GB |
+| De-Echo Normal / Metal | 118.8 dB | 122.5 dB | 110.0 dB | 1.36 s | 381 MB |
+| De-Echo Aggressive / CPU | 114.8 dB | 122.0 dB | 113.0 dB | 9.12 s | 1.33 GB |
+| De-Echo Aggressive / Metal | 116.0 dB | 121.8 dB | 112.7 dB | 1.45 s | 375 MB |
+| DeEcho-DeReverb / CPU | 121.0 dB | 120.4 dB | 105.9 dB | 13.03 s | 1.82 GB |
+| DeEcho-DeReverb / Metal | 121.9 dB | 120.3 dB | 105.8 dB | 1.77 s | 484 MB |
+
+Metal does not show CUDA's loss on the 64-channel DeEcho-DeReverb. On Metal the C ABI returns
+both stems with progress for all three, cancels after the first window, and writes the same
+float WAVs as the CLI.
 
 Metal and mobile timing/memory measurements must be recorded separately; desktop GPU results
 do not establish real-time audio-callback or phone suitability.
