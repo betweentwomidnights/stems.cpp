@@ -145,8 +145,9 @@ because it is faster overall. Back to back on the 20 s clip, GPU otherwise idle:
 
 ggml's CUDA `CONV_2D` is a plain direct kernel, 3–7x slower here than im2col into cuBLAS. On
 Vulkan direct convolution is up to a quarter faster and needs no im2col memory, so picking it per
-backend is a possible follow-up. This RTX 5070 reported `KHR_coopmat` (no coopmat2) in every run,
-so the coopmat2 path of ggml#16 was not exercised here.
+backend is a possible follow-up. The Vulkan numbers are on `NV_coopmat2`, this RTX 5070's default;
+under coopmat1 (`GGML_VK_DISABLE_COOPMAT2=1`, `KHR_coopmat`) Kim's SNRs are identical for both
+convolution paths.
 
 Every row passes cosine >= 0.99999 and SNR >= 50 dB on every output. Not yet measured on Metal;
 every op in the graph (im2col, `mul_mat`, `norm`, `gelu_erf`, `pad`, `concat`, permutes) is
