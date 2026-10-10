@@ -57,7 +57,9 @@ downloaded to `models/src/` and verified by SHA256; `--src` reuses a local copy.
 Neither model has a stated license. Kim_Vocal_2 ships in UVR's model list without one, and
 DrumSep's original release (`github.com/jarredou/models`) no longer exists; the mirrors state
 none for the weights (MSST-WebUI's own code is AGPL-3.0). The converter records
-`general.license=other`, and these GGUFs are not published: convert them locally.
+`general.license=other`. The GGUFs are published with that caveat at
+[thepatch/mdx-net-kim-vocal-2-GGUF](https://huggingface.co/thepatch/mdx-net-kim-vocal-2-GGUF) and
+[thepatch/mdx23c-drumsep-GGUF](https://huggingface.co/thepatch/mdx23c-drumsep-GGUF) (`models.sh`/`models.cmd`).
 
 The service knows both model IDs. `--stems vocals` (or `kick`, ...) selects outputs but still
 runs the whole network.

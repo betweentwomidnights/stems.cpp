@@ -3,13 +3,15 @@
 #
 # Usage: ./models.sh [--encoding f32|f16] [--namespace <hf-org>] [--out DIR] [--dry-run] [MODEL ...|all]
 #   MODEL: htdemucs (default), htdemucs_6s, htdemucs_ft, mel_band_roformer_kim, bs_roformer_viperx_317,
-#          uvr_denoise, uvr_denoise_lite, uvr_deecho_normal, uvr_deecho_aggressive, uvr_deecho_dereverb
+#          uvr_denoise, uvr_denoise_lite, uvr_deecho_normal, uvr_deecho_aggressive, uvr_deecho_dereverb,
+#          bs_roformer_dereverb_room, mdx_net_kim_vocal_2, mdx23c_drumsep
 #   defaults: htdemucs, F32, into ./models
 #
 # Files follow docs/DISTRIBUTION.md, e.g. htdemucs-42M-v1.0-F32.gguf; stems-server finds them by
 # model name. F32 is what every parity number in docs/PARITY.md was measured on. F16 is
 # published only where it was measured to hold up; asking for it on a model without one fetches
-# F32 and says so. bs_roformer_viperx_317 and the uvr_* models have no stated upstream license:
+# F32 and says so. bs_roformer_viperx_317, uvr_*, mdx_net_kim_vocal_2 and mdx23c_drumsep have no
+# stated upstream license (bs_roformer_dereverb_room is GPL-3.0):
 # read their model cards before redistributing them. To convert the checkpoints yourself instead,
 # see tools/convert_*.py.
 # Windows: models.cmd, or run this from git-bash.
@@ -27,7 +29,7 @@ while [ $# -gt 0 ]; do
     --namespace) NAMESPACE="$2"; shift ;;
     --out)       OUT="$2"; shift ;;
     --dry-run)   DRY_RUN=1 ;;
-    -h|--help)   sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)   sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*)          echo "unknown option: $1" >&2; exit 1 ;;
     *)           MODELS+=("$1") ;;
   esac
@@ -36,7 +38,8 @@ done
 [ ${#MODELS[@]} -gt 0 ] || MODELS=(htdemucs)
 if [ "${MODELS[0]}" = all ]; then
   MODELS=(htdemucs htdemucs_6s htdemucs_ft mel_band_roformer_kim bs_roformer_viperx_317
-          uvr_denoise uvr_denoise_lite uvr_deecho_normal uvr_deecho_aggressive uvr_deecho_dereverb)
+          uvr_denoise uvr_denoise_lite uvr_deecho_normal uvr_deecho_aggressive uvr_deecho_dereverb
+          bs_roformer_dereverb_room mdx_net_kim_vocal_2 mdx23c_drumsep)
 fi
 
 case "$ENCODING" in
@@ -66,6 +69,9 @@ spec() {   # model -> "<repo> <size label>"
     uvr_deecho_normal)      echo "uvr-vr-GGUF 32M" ;;
     uvr_deecho_aggressive)  echo "uvr-vr-GGUF 32M" ;;
     uvr_deecho_dereverb)    echo "uvr-vr-GGUF 56M" ;;
+    bs_roformer_dereverb_room) echo "bs-roformer-dereverb-room-GGUF 29M" ;;
+    mdx_net_kim_vocal_2)    echo "mdx-net-kim-vocal-2-GGUF 17M" ;;
+    mdx23c_drumsep)         echo "mdx23c-drumsep-GGUF 0.1B" ;;
     *) return 1 ;;
   esac
 }

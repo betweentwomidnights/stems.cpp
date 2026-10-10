@@ -44,13 +44,15 @@ See [docs/VR.md](docs/VR.md)
 for the supported VR family, the portable preprocessing contract and measured parity.
 
 [anvuew's room dereverb](https://huggingface.co/anvuew/dereverb_room) (GPL-3.0) is a mono
-BS-RoFormer for vocals recorded in a room: `python tools/convert_roformer.py --preset
-dereverb_room models/` writes `bs_roformer_dereverb_room` (noreverb, reverb; 112.3 MiB F32).
+BS-RoFormer for vocals recorded in a room: `bs_roformer_dereverb_room` (noreverb, reverb; 112.3 MiB
+F32), published under GPL-3.0 at [thepatch/bs-roformer-dereverb-room-GGUF](https://huggingface.co/thepatch/bs-roformer-dereverb-room-GGUF)
+(`./models.sh bs_roformer_dereverb_room`), or `python tools/convert_roformer.py --preset dereverb_room models/`.
 A mono model runs on each channel of a stereo input separately, so its stems are stereo like
 every other model's.
 
-Two TFC-TDF models from UVR's and MSST's lists run on one more architecture (`tfc_tdf`); neither
-has a stated license, so convert them locally (needs numpy and gguf, plus onnx for Kim or torch
+Two TFC-TDF models from UVR's and MSST's lists run on one more architecture (`tfc_tdf`). Both are
+published in F32 with **no upstream license** (see their cards): `./models.sh mdx_net_kim_vocal_2
+mdx23c_drumsep`. To convert them yourself instead (needs numpy and gguf, plus onnx for Kim or torch
 and pyyaml for DrumSep):
 
 | model | stems | GGUF size | conversion |
