@@ -22,6 +22,7 @@ public:
         }
         fft_.run(kernel_, false);
     }
+    int size() const { return n_; }
     void run(std::vector<cplx>& x, bool inverse) const {
         std::vector<cplx> a(m_);
         for (int i = 0; i < n_; i++) a[i] = (inverse ? std::conj(x[i]) : x[i]) * chirp_[i];

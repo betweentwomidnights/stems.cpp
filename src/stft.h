@@ -141,8 +141,10 @@ inline std::vector<float> htdemucs_ispec(const FFT& fft, const std::vector<cplx>
 
 // Plain torch.stft for one channel: hann_window(nfft) (periodic), win_length == n_fft,
 // center=True with reflect padding, onesided. Returns [F = nfft/2 + 1][T] complex, f-major
-// (spec[f * T + t]), with T = len / hop + 1.
-inline std::vector<cplx> torch_stft(const FFT& fft, const float* x, int len, int hop, bool normalized,
+// (spec[f * T + t]), with T = len / hop + 1. Any FFT with size() and run(): FFT, or VRFFT
+// (vr_dsp.h) for sizes that are not a power of two.
+template <class Fft>
+inline std::vector<cplx> torch_stft(const Fft& fft, const float* x, int len, int hop, bool normalized,
                                     int& n_frames) {
     const int nfft = fft.size(), F = nfft / 2 + 1;
     const std::vector<double> xp = reflect_pad(x, len, nfft / 2, nfft / 2);
@@ -162,7 +164,8 @@ inline std::vector<cplx> torch_stft(const FFT& fft, const float* x, int len, int
 }
 
 // torch.istft matching torch_stft, length=None: hop * (T - 1) samples. spec is [F][T] f-major.
-inline std::vector<float> torch_istft(const FFT& fft, const std::vector<cplx>& spec, int n_frames,
+template <class Fft>
+inline std::vector<float> torch_istft(const Fft& fft, const std::vector<cplx>& spec, int n_frames,
                                       int hop, bool normalized) {
     const int nfft = fft.size(), F = nfft / 2 + 1;
     const std::vector<double> win = hann_periodic(nfft);

@@ -9,6 +9,7 @@
 #include "htdemucs.h"
 #include "npy.h"
 #include "roformer.h"
+#include "tfc_tdf.h"
 #include "wav.h"
 
 #include <chrono>
@@ -72,9 +73,13 @@ int main(int argc, char** argv) {
         const char* dev = device.empty() ? nullptr : device.c_str();
         std::unique_ptr<st::HTDemucs> htd;
         std::unique_ptr<st::RoFormer> rof;
-        if (st::gguf_architecture(model) == "htdemucs") htd = std::make_unique<st::HTDemucs>(model, dev);
+        std::unique_ptr<st::TFCTDF> tfc;
+        const std::string arch = st::gguf_architecture(model);
+        if (arch == "htdemucs") htd = std::make_unique<st::HTDemucs>(model, dev);
+        else if (arch == "tfc_tdf") tfc = std::make_unique<st::TFCTDF>(model, dev);
         else rof = std::make_unique<st::RoFormer>(model, dev);
-        const st::Separator& m = htd ? static_cast<const st::Separator&>(*htd) : *rof;
+        const st::Separator& m = htd ? static_cast<const st::Separator&>(*htd)
+                               : tfc ? static_cast<const st::Separator&>(*tfc) : *rof;
         printf("%s (%s) on %s\n", m.name().c_str(), m.architecture().c_str(), m.backend_name());
         bool ok = true;
 
@@ -82,7 +87,8 @@ int main(int argc, char** argv) {
         const std::vector<float> seg = st::read_npy_f32(refs + "/seg_in.npy", sh);
         const std::vector<float> seg_ref = st::read_npy_f32(refs + "/seg_out.npy", sh);
         auto t0 = std::chrono::steady_clock::now();
-        const std::vector<float> out = htd ? htd->forward(0, seg.data(), dump) : rof->forward(seg.data());
+        const std::vector<float> out = htd ? htd->forward(0, seg.data(), dump)
+                                     : tfc ? tfc->forward(seg.data()) : rof->forward(seg.data());
         auto t1 = std::chrono::steady_clock::now();
         printf("segment forward: %.2f s\n", std::chrono::duration<double>(t1 - t0).count());
         const size_t seg_per = (size_t)m.audio_channels() * m.segment_samples();

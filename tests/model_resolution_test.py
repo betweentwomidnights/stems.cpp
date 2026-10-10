@@ -69,5 +69,10 @@ case("VR De-Echo variants resolve independently",
 case("room dereverb RoFormer", ["bs_roformer_dereverb_room-29M-v1.0-F32.gguf"],
      {"bs_roformer_dereverb_room": "bs_roformer_dereverb_room-29M-v1.0-F32.gguf"})
 
+case("TFC-TDF models (MDX-Net, MDX23C)",
+     ["mdx_net_kim_vocal_2-17M-v1.0-F32.gguf", "mdx23c_drumsep-0.1B-v1.0-F32.gguf"],
+     {"mdx_net_kim_vocal_2": "mdx_net_kim_vocal_2-17M-v1.0-F32.gguf",
+      "mdx23c_drumsep": "mdx23c_drumsep-0.1B-v1.0-F32.gguf", "mel_band_roformer_kim": None})
+
 print(f"FAIL: {failures} case(s)" if failures else "PASS")
 sys.exit(1 if failures else 0)
