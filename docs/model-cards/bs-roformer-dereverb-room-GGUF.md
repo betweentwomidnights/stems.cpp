@@ -51,9 +51,10 @@ the chunked `demix_track` over the whole clip. Measured 2026-10-09 with ggml `9d
 | CPU | 0.9999997 / 62.4 dB | 0.9999998 / 64.6 dB | 51.4 s |
 | CUDA | 0.9999997 / 62.4 dB | 0.9999998 / 64.6 dB | 6.4 s |
 | Vulkan | 0.9999997 / 62.4 dB | 0.9999998 / 64.6 dB | 6.3 s |
+| Metal (Apple M4) | 0.9999999 / 69.9 dB | 0.9999999 / 68.8 dB | 26.5 s |
 
-Not yet measured on Apple Metal. It runs the same BS-RoFormer graph as the viperx model, which
-passes there.
+The Metal row is against references dumped on the M4 (ggml `4ad3b30b`, 2026-10-10). On Metal a stereo
+separation runs at about 0.5x realtime.
 
 ## Sources, changes and license
 

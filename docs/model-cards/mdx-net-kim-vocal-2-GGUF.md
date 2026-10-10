@@ -59,9 +59,11 @@ Vulkan and CUDA: RTX 5070 Laptop. Cosine is 1.0000000 on every output.
 | CPU | 101.5 dB | 101.3 dB | 143.6 dB | 17.7 s |
 | CUDA | 99.5 dB | 99.4 dB | 142.1 dB | 4.3 s |
 | Vulkan | 97.0 dB | 97.1 dB | 140.1 dB | 4.6 s |
+| Metal (Apple M4) | 97.6 dB | 97.7 dB | 140.7 dB | 8.7 s |
 
-Not yet measured on Apple Metal; every op in the graph is one the other stems.cpp models already
-run there.
+**On Apple Metal it needs stems.cpp v0.1.5 or later**: v0.1.4 aborts there with `unsupported op 'PAD'`.
+The Metal row is against references dumped on the M4 (ggml `4ad3b30b`, 2026-10-10), peak memory
+272 MB. The M4's CPU runs it at about 0.3x realtime, so expect that on Intel Macs.
 
 ## Sources
 
