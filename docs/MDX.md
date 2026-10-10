@@ -118,7 +118,7 @@ is a full mix, not a drum stem: that does not matter for implementation parity, 
 separations of it are not meaningful as drum stems.
 
 Measured 2026-10-09 on Windows at ggml `9d0d910b` (Core Ultra 9 275HX, 24 threads; RTX 5070
-Laptop GPU). Cosine is 1.0000000 on every output of every row, so the table gives SNR (dB).
+Laptop GPU); every SNR is identical at `4ad3b30b`, the revision pinned now. Cosine is 1.0000000 on every output of every row, so the table gives SNR (dB).
 Times are `separate` on the 20 s clip, excluding model load and Vulkan shader compilation.
 
 | model / backend | seg | full (per output) | 20 s clip |
@@ -126,15 +126,27 @@ Times are `separate` on the 20 s clip, excluding model load and Vulkan shader co
 | Kim_Vocal_2 / CPU | 101.5 | vocals 101.3, instrumental 143.6 | 17.7 s |
 | Kim_Vocal_2 / Vulkan | 97.0 | vocals 97.1, instrumental 140.1 | 4.6 s |
 | Kim_Vocal_2 / CUDA | 99.5 | vocals 99.4, instrumental 142.1 | 4.3 s |
-| DrumSep / CPU | 94.7 � 123.9 | kick 130.8, snare 126.8, toms 124.4, hh 119.9, ride 123.7, crash 115.3 | 72.9 s |
-| DrumSep / Vulkan | 96.2 � 124.8 | kick 131.8, snare 128.2, toms 124.9, hh 123.5, ride 124.9, crash 119.0 | 8.4 s |
-| DrumSep / CUDA | 94.4 � 123.0 | kick 130.5, snare 126.5, toms 123.6, hh 121.2, ride 123.1, crash 116.3 | 8.3 s |
+| DrumSep / CPU | 94.7 – 123.9 | kick 130.8, snare 126.8, toms 124.4, hh 119.9, ride 123.7, crash 115.3 | 72.9 s |
+| DrumSep / Vulkan | 96.2 – 124.8 | kick 131.8, snare 128.2, toms 124.9, hh 123.5, ride 124.9, crash 119.0 | 8.4 s |
+| DrumSep / CUDA | 94.4 – 123.0 | kick 130.5, snare 126.5, toms 123.6, hh 121.2, ride 123.1, crash 116.3 | 8.3 s |
 
 The lowest seg number is always `crash`, whose stem is near silence on this clip (largest
-absolute error 5e-8). ggml's direct `CONV_2D` was tried first for the 3x3 convolutions and held
-the same numbers on CPU, but Kim fell to 29 dB on Vulkan: with cooperative matrices its shader
-stages tiles in fp16 (and accumulates in fp16 under coopmat2) regardless of the kernel type.
-Banded im2col keeps every matmul on the F32 path.
+absolute error 5e-8). ggml's direct `CONV_2D` was tried first for the 3x3 convolutions. It matched on CPU, but Kim fell
+to 29 dB on Vulkan: with cooperative matrices its shader staged tiles in fp16 whatever the kernel
+type. betweentwomidnights/ggml#16 (in the pinned `4ad3b30b`) keeps an F32-kernel `CONV_2D` in
+fp32, and direct convolution then passes on every backend with the same SNRs. Banded im2col stays
+because it is faster overall. Back to back on the 20 s clip, GPU otherwise idle:
+
+| backend | Kim, im2col | Kim, direct | DrumSep, im2col | DrumSep, direct |
+|---|---|---|---|---|
+| CPU | 20.3 – 21.4 s | 24.5 – 24.8 s | 81.2 s | 78.2 s |
+| Vulkan | 4.8 – 5.1 s | 3.5 – 5.0 s | 8.9 – 11.1 s | 7.4 – 8.6 s |
+| CUDA | 4.6 – 7.1 s | 14.6 – 15.4 s | 9.1 – 9.2 s | 58.7 – 70.9 s |
+
+ggml's CUDA `CONV_2D` is a plain direct kernel, 3–7x slower here than im2col into cuBLAS. On
+Vulkan direct convolution is up to a quarter faster and needs no im2col memory, so picking it per
+backend is a possible follow-up. This RTX 5070 reported `KHR_coopmat` (no coopmat2) in every run,
+so the coopmat2 path of ggml#16 was not exercised here.
 
 Every row passes cosine >= 0.99999 and SNR >= 50 dB on every output. Not yet measured on Metal;
 every op in the graph (im2col, `mul_mat`, `norm`, `gelu_erf`, `pad`, `concat`, permutes) is

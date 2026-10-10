@@ -187,8 +187,9 @@ struct TFCTDF::Impl {
         return y;
     }
 
-    // im2col + F32 matmul, the path every backend computes in full precision. (ggml's direct
-    // CONV_2D keeps its tiles in fp16 on Vulkan with cooperative matrices, which costs Kim 70 dB.)
+    // im2col + F32 matmul. ggml's direct CONV_2D matches too since betweentwomidnights/ggml#16
+    // (before it, Vulkan ran it in fp16 with cooperative matrices: Kim at 29 dB), but it is slower
+    // here on CUDA (5-12x) and CPU, and no faster on Vulkan; docs/MDX.md has the timings.
     ggml_tensor* im2col_mm(ggml_context* ctx, ggml_tensor* x, ggml_tensor* k, int stride, int p0, int p1) const {
         ggml_tensor* im = ggml_im2col(ctx, k, x, stride, stride, p0, p1, 1, 1, true, GGML_TYPE_F32);
         ggml_tensor* y = mm(ctx, ggml_reshape_2d(ctx, im, im->ne[0], im->ne[1] * im->ne[2]),
