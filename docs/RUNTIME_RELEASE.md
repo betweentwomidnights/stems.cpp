@@ -29,6 +29,10 @@ against whatever the machine has installed, and no one needs an administrator
 install of the redistributable. The package script fails if that runtime is
 older than the compiler, since binaries from a newer toolset can crash on an
 older `msvcp140`, and `BUILD-INFO.json` records its version.
+Both come from the build's own CMake configuration, never from whichever
+Visual Studio is newest. The script also runs the staged
+`stems-server.exe --props` under a DLL-load recorder and fails unless all four
+runtime DLLs load from the package's own folder rather than System32.
 
 Loaded into a host process, `stems.dll` binds to the runtime the host has
 already loaded instead (see the `stems-ggml` naming below for why), so inside a
