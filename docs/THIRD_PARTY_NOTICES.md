@@ -7,6 +7,12 @@ project's `LICENSE`:
 - `LICENSE-cpp-httplib.txt` — cpp-httplib, MIT License, copyright (c) 2017 yhirose.
 - `LICENSE-yyjson.txt` — yyjson, MIT License, copyright (c) 2020 YaoYuan.
 
+It also carries the Microsoft Visual C++ runtime (`msvcp140.dll`,
+`vcruntime140.dll`, `vcruntime140_1.dll`, `vcomp140.dll`) beside the
+executables, so they need no system-wide install. These are redistributable
+files from Visual Studio 2022, shipped under its license terms for
+distributable code.
+
 The separate CUDA runtime archive, and the standalone archive, include NVIDIA's
 EULA. Model weights are not included in these runtime packages; each model's
 license and download terms remain with its model repository (see

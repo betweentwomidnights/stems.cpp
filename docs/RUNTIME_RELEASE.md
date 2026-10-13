@@ -9,7 +9,7 @@ runtime included. Model weights are downloaded separately from Hugging Face
 
 | Archive | Contents |
 |---|---|
-| `stems-<tag>-windows-x64-core.zip` | `stems.dll` and `libstems_v1.h`, `stems-server.exe`, `stems-split.exe`, ggml core and CPU variants, licenses, `BUILD-INFO.json`, and this document |
+| `stems-<tag>-windows-x64-core.zip` | `stems.dll` and `libstems_v1.h`, `stems-server.exe`, `stems-split.exe`, ggml core and CPU variants, the Visual C++ runtime, licenses, `BUILD-INFO.json`, and this document |
 | `stems-<tag>-windows-x64-cuda.zip` | `stems-ggml-cuda.dll` for NVIDIA GPUs (needs the CUDA 12 runtime beside it or on `PATH`) |
 | `stems-<tag>-windows-x64-vulkan.zip` | `stems-ggml-vulkan.dll` for AMD, Intel, or Vulkan-capable NVIDIA GPUs |
 | `stems-<tag>-windows-x64-standalone.zip` | Core, both GPU backends, CUDA runtime and EULA, `models.cmd`, and a startup guide; for direct use |
@@ -20,8 +20,19 @@ release is the manifest: a host pins a tag and checks each zip against that
 tag's `SHA256SUMS`.
 
 All binaries link the Visual C++ 2015–2022 runtime dynamically, OpenMP
-(`VCOMP140.DLL`) included, as sa3.cpp's and yuey.cpp's do. A host installer
-should make sure the VC++ redistributable is present.
+(`VCOMP140.DLL`) included, as sa3.cpp's and yuey.cpp's do, and the core
+carries that runtime (`msvcp140`, `vcruntime140`, `vcruntime140_1`,
+`vcomp140`) from the redistributable folder of the Visual Studio that built it.
+Windows loads DLLs from an executable's own folder before System32, so
+`stems-server.exe` and `stems-split.exe` run on the runtime they were built
+against whatever the machine has installed, and no one needs an administrator
+install of the redistributable. The package script fails if that runtime is
+older than the compiler, since binaries from a newer toolset can crash on an
+older `msvcp140`, and `BUILD-INFO.json` records its version.
+
+Loaded into a host process, `stems.dll` binds to the runtime the host has
+already loaded instead (see the `stems-ggml` naming below for why), so inside a
+DAW it shares the plugin's own Visual C++ runtime and the copies go unused.
 
 ## Embedding: gary4juce
 
