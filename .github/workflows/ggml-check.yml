@@ -24,7 +24,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # Windows is pinned like release.yml's job, so this builds with the same Visual
+        # Studio 2022 toolchain the release packages do. MSVC is stems.cpp's main release
+        # compiler, and without this a Windows-only break surfaced only at release time.
+        os: [ubuntu-latest, macos-latest, windows-2022]
+    # Git Bash on Windows, so every runner goes through the same script.
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout

@@ -90,7 +90,7 @@ host loads it, the `--version`/`--props` contract, and model-file resolution. Th
 checks need references and are in [docs/PARITY.md](docs/PARITY.md).
 
 Every pull request runs `ci/ggml-check.sh` (the `ggml check` workflow): a CPU build plus those
-tests on Linux and macOS, and a compile-only CUDA build. sa3.cpp, yuey.cpp, acestep.cpp and
+tests on Linux, macOS and Windows (MSVC), and a compile-only CUDA build. sa3.cpp, yuey.cpp, acestep.cpp and
 audiocraft.cpp carry the same script, so a ggml submodule bump is built and tested here before it
 merges, and the shared ggml fork can call the workflow with an unmerged revision (`ggml-ref`).
 
