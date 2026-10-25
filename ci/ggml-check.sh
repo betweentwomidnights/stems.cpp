@@ -9,6 +9,10 @@
 # them are built: check the repo out, point its ggml at the revision under test,
 # run ci/ggml-check.sh.
 #
+# It runs under sh on Linux and macOS and under Git Bash on Windows, where CMake
+# picks the Visual Studio generator; the --config Release arguments below are
+# what make that multi-config build Release.
+#
 # CPU only and no model weights, so it runs on an ordinary hosted runner. That
 # means a backend-specific change compiles here but is not exercised: the CUDA,
 # Vulkan and Metal paths still need a machine that has one, and model parity
@@ -23,7 +27,7 @@ cd "$root"
 build=${BUILD_DIR:-build-ggml-check}
 jobs=${JOBS:-}
 if [ -z "$jobs" ]; then
-    jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+    jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-2}")
 fi
 
 # Which backend to build. cpu is the default and the only one that runs the
