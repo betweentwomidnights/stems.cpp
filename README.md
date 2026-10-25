@@ -89,6 +89,11 @@ Older nvcc with a newer gcc: `./build.sh cuda -DCMAKE_CUDA_HOST_COMPILER=g++-12`
 host loads it, the `--version`/`--props` contract, and model-file resolution. The PyTorch parity
 checks need references and are in [docs/PARITY.md](docs/PARITY.md).
 
+Every pull request runs `ci/ggml-check.sh` (the `ggml check` workflow): a CPU build plus those
+tests on Linux, macOS and Windows (MSVC), and a compile-only CUDA build. sa3.cpp, yuey.cpp, acestep.cpp and
+audiocraft.cpp carry the same script, so a ggml submodule bump is built and tested here before it
+merges, and the shared ggml fork can call the workflow with an unmerged revision (`ggml-ref`).
+
 Prebuilt Windows runtimes (core, CUDA, Vulkan, standalone) are attached to each
 [GitHub release](https://github.com/betweentwomidnights/stems.cpp/releases);
 [docs/RUNTIME_RELEASE.md](docs/RUNTIME_RELEASE.md) covers the packages and how they are built.
