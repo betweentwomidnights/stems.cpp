@@ -157,10 +157,31 @@ local tracked files differed from the commit.
 CTest runs without any model: the DSP round trips, the C ABI as a host sees it,
 the `--version`/`--props` contract, and model-file resolution.
 
+### Reusing ggml-cuda
+
+Compiling `stems-ggml-cuda.dll` is over 90% of a Windows build: close to two
+hours on a hosted runner. It depends only on the ggml pin, the CUDA toolkit, the
+compiler, and how `CMakeLists.txt` and `ci/package-windows.ps1` configure ggml
+(including the `stems-` library prefix). `ci\package-windows.ps1
+-PrintGgmlCudaKey` names all of that, leaving out the `project(VERSION)` line,
+so a version bump alone doesn't change it.
+
+`release.yml` builds the DLL in its own job with `-GgmlCudaOnly` and keeps it,
+with the CUDA runtime, as a 90-day attested artifact named `ggml-cuda-<key>`. A
+later run with the same key packages that build with `-PrebuiltCuda` instead of
+compiling, so a release after a dry run takes minutes and ships the DLL the dry
+run tested. The packaging job checks the build's attestation against this
+repository's `release.yml`, and the package script refuses a bundle whose key
+isn't the one the checkout computes. `BUILD-INFO.json` names the run and commit
+that built the DLL. Dispatch with `-f rebuild_ggml_cuda=true` to compile
+regardless.
+
 ## Release checks
 
 1. **Dry run:** dispatch `release.yml` with no tag, on the intended branch:
    `gh workflow run release.yml -R betweentwomidnights/stems.cpp --ref main`.
+   This is the slow run when the ggml-cuda key has changed (see
+   [Reusing ggml-cuda](#reusing-ggml-cuda)); the release then reuses its build.
    `-f platforms=macos` (or `windows`) builds one platform only; adding macOS to an
    existing release is `-f tag=v0.1.0 -f platforms=macos`.
    CI builds the full portable package and retains the four zips plus
