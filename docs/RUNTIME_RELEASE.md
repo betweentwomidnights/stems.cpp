@@ -96,6 +96,34 @@ const stems_api_v1* api = ((const stems_api_v1* (*)(uint32_t))
 Developer ID and the hardened runtime, and the zip is notarized. A zip of bare
 binaries cannot be stapled, so Gatekeeper checks the notarization online.
 
+## Linux
+
+Linux follows the Windows layout: `stems-<tag>-linux-{x64,arm64}-core.zip` holds
+`libstems.so` and `libstems_v1.h`, `stems-server`, `stems-split`, `libstems-ggml.so`,
+`libstems-ggml-base.so` and the CPU variants (`libstems-ggml-cpu-*.so`), licenses and
+`BUILD-INFO.json`; `stems-<tag>-linux-{x64,arm64}-vulkan.zip` adds
+`libstems-ggml-vulkan.so`. Unpack both into one folder. `SHA256SUMS-linux-x64` and
+`SHA256SUMS-linux-arm64` cover each platform's two archives. Every published release
+attaches them; `ci/package-linux.py` builds them, and `.github/workflows/linux-packaging.yml`
+runs it on Ubuntu 24.04 for both architectures.
+
+Every binary carries `RUNPATH $ORIGIN`, so `libstems.so` finds its ggml libraries in
+its own folder however the host loads it, and the `libstems-ggml` names keep it from
+binding to another plugin's `libggml.so` already loaded in the same DAW:
+
+```c
+void* lib = dlopen("/home/.../stems/v0.1.0/libstems.so", RTLD_NOW | RTLD_LOCAL);
+const stems_api_v1* api = ((const stems_api_v1* (*)(uint32_t))
+                           dlsym(lib, "stems_get_api"))(STEMS_ABI_VERSION_1);
+```
+
+The Vulkan loader (`libvulkan.so.1`) and a GPU driver come from the system. Without
+them the Vulkan backend does not register and stems runs on the CPU. The package
+script checks each archive after unpacking it elsewhere: every library resolves
+inside the package, `stems-server --props` lists a CPU device, and `stems-abi-test`,
+run from outside the folder, loads `libstems.so` through the C ABI. Hosted runners
+have no GPU, so a real Vulkan device is checked with `--require-gpu` on a GPU machine.
+
 ## Service: gary4local
 
 `stems-server.exe` answers `--version` (the bare version) and `--props` (the
