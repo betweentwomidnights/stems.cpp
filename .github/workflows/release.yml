@@ -1,4 +1,4 @@
-# ABOUTME: Builds the Windows packages and the signed, notarized macOS package for a release.
+# ABOUTME: Builds the Windows, Linux and signed, notarized macOS packages for a release.
 # ABOUTME: A no-tag dispatch keeps a dry-run artifact without publishing.
 name: release
 
@@ -14,10 +14,10 @@ on:
         required: false
         type: string
       platforms:
-        description: which packages to build (a release event always builds both)
+        description: which packages to build (a release event builds all three)
         required: false
         type: choice
-        options: [all, windows, macos]
+        options: [all, windows, macos, linux]
         default: all
       rebuild_ggml_cuda:
         description: compile ggml-cuda even if a build with the same key already exists
@@ -45,7 +45,7 @@ jobs:
     # generator by name. A runner image moving to a newer Visual Studio should
     # be a change made here on purpose, not one that turns up as a red release.
     runs-on: windows-2022
-    if: github.event_name == 'release' || inputs.platforms != 'macos'
+    if: github.event_name == 'release' || (inputs.platforms != 'macos' && inputs.platforms != 'linux')
     timeout-minutes: 240
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
@@ -141,7 +141,7 @@ jobs:
     # Pinned for the same reason as windows-cuda; they must match.
     needs: windows-cuda
     runs-on: windows-2022
-    if: github.event_name == 'release' || inputs.platforms != 'macos'
+    if: github.event_name == 'release' || (inputs.platforms != 'macos' && inputs.platforms != 'linux')
     timeout-minutes: 90
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
@@ -256,7 +256,7 @@ jobs:
     name: macos-universal (metal + cpu)
     # macOS 15: its Rosetta runs the x86_64 slice's AVX2 code, so CI tests both slices.
     runs-on: macos-15
-    if: github.event_name == 'release' || inputs.platforms != 'windows'
+    if: github.event_name == 'release' || (inputs.platforms != 'windows' && inputs.platforms != 'linux')
     timeout-minutes: 90
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
@@ -358,3 +358,50 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "$TAG" dist/stems-*-macos-universal.zip dist/SHA256SUMS-macos --clobber
+  linux:
+    name: Linux packages
+    # x64/ARM64 core and Vulkan packages (ci/package-linux.py), from the release
+    # tag when there is one. linux-attach publishes what it builds.
+    if: github.event_name == 'release' || inputs.platforms == 'all' || inputs.platforms == 'linux'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/linux-packaging.yml
+    with:
+      tag: ${{ github.event.release.tag_name || inputs.tag }}
+
+  linux-attach:
+    name: Attach Linux packages
+    needs: linux
+    if: github.event.release.tag_name != '' || inputs.tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Fetch both platforms' packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: stems-linux-*-vulkan
+          path: dist
+          merge-multiple: true
+
+      - name: Check the packages are this release's
+        working-directory: dist
+        run: |
+          for platform in linux-x64 linux-arm64; do
+            sha256sum -c "SHA256SUMS-$platform"
+            for part in core vulkan; do
+              test -f "stems-$TAG-$platform-$part.zip"
+            done
+          done
+          test "$(ls *.zip | wc -l)" -eq 4
+
+      - name: Attest provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'dist/*.zip'
+
+      - name: Attach to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$TAG" -R "$GITHUB_REPOSITORY" dist/stems-*-linux-*.zip dist/SHA256SUMS-linux-* --clobber
