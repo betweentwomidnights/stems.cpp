@@ -45,6 +45,33 @@ jobs:
           ref: ${{ inputs.tag }}
           submodules: recursive
 
+      # A release tagged before Linux packaging existed (v0.1.7) has the source but not
+      # these scripts. Take them from the commit this workflow runs at, and exclude them
+      # from git status: they configure and check the build, and are not its source, so
+      # BUILD-INFO still records the tag's commit as clean. The attestation names this run.
+      - name: Packaging scripts from the workflow's commit
+        if: hashFiles('ci/package-linux.py') == ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: .packaging
+          sparse-checkout: |
+            ci/package-linux.py
+            ci/check-linux-package.py
+            tests/linux_package_test.py
+          sparse-checkout-cone-mode: false
+
+      - name: Use them for this build
+        if: hashFiles('ci/package-linux.py') == ''
+        run: |
+          for file in ci/package-linux.py ci/check-linux-package.py tests/linux_package_test.py; do
+            cp ".packaging/$file" "$file"
+            echo "/$file" >> .git/info/exclude
+          done
+          echo "/.packaging/" >> .git/info/exclude
+          echo "packaging scripts from $GITHUB_SHA for $(git rev-parse HEAD)"
+          test -z "$(git status --porcelain)"
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
