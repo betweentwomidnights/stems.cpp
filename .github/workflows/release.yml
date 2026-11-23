@@ -259,6 +259,8 @@ jobs:
     if: github.event_name == 'release' || (inputs.platforms != 'windows' && inputs.platforms != 'linux')
     timeout-minutes: 90
     env:
+      # The macOS 26 SDK builds the separate Metal tensor library for newer GPUs.
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
       # Whether the Developer ID and notary secrets exist, without exposing them to every step.
       HAVE_SIGNING: ${{ secrets.MACOS_CERT_P12 != '' && secrets.APPLE_NOTARY_KEY_P8 != '' }}
@@ -327,6 +329,12 @@ jobs:
           model="$RUNNER_TEMP/htdemucs-42M-v1.0-F16.gguf"
           curl -fsSL -o "$model" "https://huggingface.co/thepatch/htdemucs-GGUF/resolve/main/htdemucs-42M-v1.0-F16.gguf"
           echo "CHECK_MODEL=$model" >> "$GITHUB_ENV"
+
+      - name: Ensure the offline Metal compiler is installed
+        run: |
+          if ! xcrun --sdk macosx metal --version; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
 
       - name: Build, test, sign, notarize, and package
         run: |

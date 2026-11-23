@@ -73,12 +73,14 @@ prefix the same session is bit-identical to running stems alone.
 
 `stems-<tag>-macos-universal.zip` is a single archive for Apple Silicon and Intel
 Macs: `libstems.dylib` and `libstems_v1.h`, `stems-server`, `stems-split`, `models.sh`,
-licenses, and `BUILD-INFO.json`. `SHA256SUMS-macos` covers it, kept apart from the
+precompiled Metal libraries, licenses, and `BUILD-INFO.json`. `SHA256SUMS-macos` covers it, kept apart from the
 Windows `SHA256SUMS` so the two jobs never write one file.
 
 There are no backend archives and no ggml libraries. ggml is linked statically, so
-`libstems.dylib` holds ggml, the CPU backend (Accelerate) and the Metal backend with
-its shader source embedded, and exports only `stems_get_api`. Nothing in it can bind to
+`libstems.dylib` holds ggml, the CPU backend (Accelerate) and the Metal backend, and exports only `stems_get_api`. The Metal
+backend loads `default.metallib`, or `default-bf16.metallib` on macOS 14+ devices with BF16,
+from beside `libstems.dylib` (plus `ggml-tensor.metallib` when built with an OS 26 SDK),
+so keep those files with it. Nothing in it can bind to
 another plugin's ggml. It links only system frameworks and runs on macOS 13.3 or later.
 
 Every binary is universal. The arm64 slice runs on the Metal GPU. The x86_64 slice is
@@ -138,7 +140,7 @@ callers that expose it to a network must supply their own access controls.
 
 ## Build and publish
 
-On an Apple Silicon Mac with Xcode and CMake (macOS 15, so Rosetta can run the x86_64
+On an Apple Silicon Mac with Xcode, its Metal Toolchain, and CMake (macOS 15, so Rosetta can run the x86_64
 slice's checks):
 
 ```bash
